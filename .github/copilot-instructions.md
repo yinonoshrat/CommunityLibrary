@@ -89,6 +89,23 @@ The backend folder is now a thin wrapper:
 - **Dependencies**: Update `api/package.json` when adding npm packages for API
 - **Testing**: Use `npm run dev` to test full stack locally before deploying
 
+## AI Agent Workflow Guidelines
+
+### Testing Requirements
+- **For each feature**: Create tests or update existing tests before marking feature complete
+- **After changes**: Always run tests to verify everything works
+- **Test locations**: Frontend tests in `frontend/src/__tests__/`, API tests in `api/__tests__/`
+
+### Task Management
+- **Break down large tasks**: Split big features into smaller, manageable sub-tasks
+- **Implement incrementally**: Complete one sub-task at a time before moving to the next
+- **Use todo lists**: Track progress using the task management system
+
+### When Uncertain
+- **Stop and ask**: If requirements are unclear or multiple approaches are possible, stop and ask for input
+- **Don't guess**: Avoid making assumptions about user preferences or business logic
+- **Clarify first**: Better to ask for clarification than implement the wrong solution
+
 ## Database Integration
 
 ### Current Setup: Supabase (Postgres)
