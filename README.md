@@ -7,10 +7,19 @@ Web app to manage a community library
 ```
 CommunityLibrary/
 ├── frontend/          # React + Vite + TypeScript frontend
-├── backend/           # Express.js backend
-├── api/              # Vercel serverless functions wrapper
+├── backend/           # Local development server (wraps api/)
+├── api/              # Vercel serverless functions (shared code)
 └── vercel.json       # Vercel deployment configuration
 ```
+
+## Architecture
+
+This project uses a **shared codebase** approach:
+- **api/index.js**: Contains the Express app with all routes - used by both local dev and Vercel
+- **backend/server.js**: Imports `api/index.js` and runs it locally on port 3001
+- **Vercel deployment**: Uses `api/index.js` directly as serverless functions
+
+**Key principle**: API logic lives in `api/`, local development wraps it in `backend/`
 
 ## Development
 
@@ -67,6 +76,6 @@ The `vercel.json` configuration handles:
 ## Tech Stack
 
 - **Frontend**: React, Vite, TypeScript
-- **Backend**: Express.js, Node.js
-- **Hosting**: Vercel
+- **Backend**: Express.js (shared between local and Vercel)
+- **Hosting**: Vercel (serverless functions)
 - **API Proxy**: Vite dev server proxies `/api` to `http://localhost:3001` in development
