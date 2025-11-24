@@ -1,0 +1,18 @@
+{
+  "name": "communitylibrary-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Community Library",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}
