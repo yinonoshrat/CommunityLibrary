@@ -22,10 +22,16 @@ This project uses a **shared codebase** for local development and Vercel serverl
 
 ### Local Development
 ```bash
-npm run dev              # Runs frontend (5173) + backend (3001) concurrently
+npm start                # Alias for npm run dev
+npm run dev              # Runs frontend (5174) + backend (3001) concurrently
 npm run dev:frontend     # Frontend only - proxies /api to localhost:3001
 npm run dev:backend      # Backend only (runs api/index.js locally)
 ```
+
+### Environment Variables
+- **Local development**: Use `.env.development.local` file (pulled from Vercel)
+- **Production**: Environment variables managed in Vercel dashboard
+- Pull latest env vars: `npx vercel env pull .env.development.local`
 
 ### API Testing in Development
 - Frontend proxies `/api/*` to `http://localhost:3001` via `vite.config.js`
@@ -82,3 +88,53 @@ The backend folder is now a thin wrapper:
 - **No duplication**: Backend imports api code, never copies it
 - **Dependencies**: Update `api/package.json` when adding npm packages for API
 - **Testing**: Use `npm run dev` to test full stack locally before deploying
+
+## Database Integration
+
+### Current Setup: Supabase (Postgres)
+- **Database**: Supabase Postgres (connection details in `.env.development.local`)
+- **Environment variables** available:
+  - `POSTGRES_URL` - Connection string with pooler (recommended for serverless)
+  - `POSTGRES_URL_NON_POOLING` - Direct connection (for migrations/admin tasks)
+  - `SUPABASE_URL` - Supabase API endpoint
+  - `SUPABASE_ANON_KEY` - Public API key for client-side
+  - `SUPABASE_SERVICE_ROLE_KEY` - Admin key for server-side operations
+
+### Database Abstraction Pattern
+To allow easy database switching in the future:
+
+1. **Create a database adapter layer** (`api/db/adapter.js`):
+   ```javascript
+   // Example structure - abstracts DB operations
+   export const db = {
+     query: async (sql, params) => { /* implementation */ },
+     books: {
+       getAll: async () => { /* implementation */ },
+       getById: async (id) => { /* implementation */ },
+       create: async (data) => { /* implementation */ }
+     }
+   }
+   ```
+
+2. **Use environment variables for configuration**:
+   - Access via `process.env.POSTGRES_URL` or `process.env.SUPABASE_URL`
+   - Never hardcode connection strings in code
+   
+3. **Import the adapter in routes**:
+   ```javascript
+   import { db } from './db/adapter.js'
+   app.get('/api/books', async (req, res) => {
+     const books = await db.books.getAll()
+     res.json({ books })
+   })
+   ```
+
+4. **To switch databases**: Update adapter implementation, not route logic
+   - Swap Supabase client for PostgreSQL client, MySQL, MongoDB, etc.
+   - Routes remain unchanged
+
+### Getting Started with Database
+1. Pull environment variables: `npx vercel env pull .env.development.local`
+2. Install database client: `cd api && npm install @supabase/supabase-js` (or `pg` for raw Postgres)
+3. Create adapter in `api/db/adapter.js`
+4. Use adapter in API routes
