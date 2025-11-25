@@ -375,11 +375,17 @@ app.get('/api/loans/:id', async (req, res) => {
 
 app.post('/api/loans', async (req, res) => {
   try {
+    // Convert book_id to family_book_id if needed
+    if (req.body.book_id && !req.body.family_book_id) {
+      req.body.family_book_id = req.body.book_id
+    }
+    
     const loan = await db.loans.create(req.body);
     
-    // Update book status to borrowed
+    // Update book status to on_loan (new status name)
     if (req.body.status === 'active') {
-      await db.books.update(req.body.book_id, { status: 'borrowed' });
+      const bookId = req.body.family_book_id || req.body.book_id
+      await db.books.update(bookId, { status: 'on_loan' });
     }
     
     res.status(201).json({ loan });
@@ -394,9 +400,9 @@ app.put('/api/loans/:id', async (req, res) => {
     
     // Update book status based on loan status
     if (req.body.status === 'active') {
-      await db.books.update(loan.book_id, { status: 'borrowed' });
+      await db.books.update(loan.family_book_id, { status: 'on_loan' });
     } else if (req.body.status === 'returned') {
-      await db.books.update(loan.book_id, { status: 'available' });
+      await db.books.update(loan.family_book_id, { status: 'available' });
     }
     
     res.json({ loan });
@@ -464,6 +470,77 @@ app.post('/api/books/:bookId/likes', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
+  }
+});
+
+// ==================== GENRE MAPPING ROUTES ====================
+
+// Get all genre mappings
+app.get('/api/genre-mappings', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('genre_mappings')
+      .select('*')
+      .order('usage_count', { ascending: false });
+    
+    if (error) throw error;
+    
+    res.json({ mappings: data || [] });
+  } catch (error) {
+    console.error('Failed to fetch genre mappings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save or update a genre mapping
+app.post('/api/genre-mappings', async (req, res) => {
+  try {
+    const { original_category, mapped_genre } = req.body;
+    
+    if (!original_category || !mapped_genre) {
+      return res.status(400).json({ error: 'Missing required fields: original_category, mapped_genre' });
+    }
+    
+    // Try to increment usage count if mapping exists
+    const { data: existing, error: fetchError } = await supabase
+      .from('genre_mappings')
+      .select('*')
+      .eq('original_category', original_category)
+      .eq('mapped_genre', mapped_genre)
+      .single();
+    
+    if (existing) {
+      // Update existing mapping
+      const { data, error } = await supabase
+        .from('genre_mappings')
+        .update({ 
+          usage_count: existing.usage_count + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      res.json({ mapping: data });
+    } else {
+      // Create new mapping
+      const { data, error } = await supabase
+        .from('genre_mappings')
+        .insert({
+          original_category,
+          mapped_genre,
+          usage_count: 1
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      res.json({ mapping: data });
+    }
+  } catch (error) {
+    console.error('Failed to save genre mapping:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -9,9 +9,8 @@ import {
   Alert,
   CircularProgress,
   Divider,
-  IconButton,
 } from '@mui/material';
-import { ArrowBack, Edit, Save, Cancel } from '@mui/icons-material';
+import { Edit, Save, Cancel } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
@@ -177,8 +176,8 @@ export default function Profile() {
     return (
       <Container maxWidth="sm" sx={{ mt: 4 }}>
         <Alert severity="error">לא נמצא פרופיל משתמש</Alert>
-        <Button onClick={() => navigate('/')} sx={{ mt: 2 }}>
-          חזרה לדף הבית
+        <Button onClick={() => navigate(-1)} sx={{ mt: 2 }}>
+          חזרה
         </Button>
       </Container>
     );
@@ -186,14 +185,9 @@ export default function Profile() {
 
   return (
     <Container maxWidth="sm" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <IconButton onClick={() => navigate('/')} sx={{ mr: 1 }}>
-          <ArrowBack />
-        </IconButton>
-        <Typography variant="h4" component="h1">
-          הפרופיל שלי
-        </Typography>
-      </Box>
+      <Typography variant="h4" component="h1" sx={{ mb: 3 }}>
+        הפרופיל שלי
+      </Typography>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>

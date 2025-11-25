@@ -157,7 +157,7 @@ export default function FamilyMembers() {
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
-        <Button startIcon={<ArrowBack />} onClick={() => navigate('/family')}>
+        <Button startIcon={<ArrowBack />} onClick={() => navigate(-1)}>
           חזרה
         </Button>
       </Container>
@@ -190,7 +190,7 @@ export default function FamilyMembers() {
 
       <Stack spacing={2}>
         {members.map((member) => (
-          <Card key={member.id}>
+          <Card key={member.id} data-testid="member-card">
             <CardContent>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box flex={1}>

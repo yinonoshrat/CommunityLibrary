@@ -282,6 +282,7 @@ export default function Home() {
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, sm: 4 }}>
             <Card
+              data-testid="management-card"
               sx={{
                 height: '100%',
                 cursor: 'pointer',
@@ -295,9 +296,9 @@ export default function Home() {
             >
               <CardContent>
                 <Box display="flex" flexDirection="column" alignItems="center" textAlign="center">
-                  <BookIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                  <LibraryBooks sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
                   <Typography variant="h6" gutterBottom>
-                    ניהול קטלוג ספרים
+                    הספרים שלי
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     הוסף, ערוך ומחק ספרים מהקטלוג המשפחתי
@@ -308,6 +309,7 @@ export default function Home() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <Card
+              data-testid="management-card"
               sx={{
                 height: '100%',
                 cursor: 'pointer',
@@ -334,6 +336,7 @@ export default function Home() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <Card
+              data-testid="management-card"
               sx={{
                 height: '100%',
                 cursor: 'pointer',

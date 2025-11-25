@@ -133,12 +133,14 @@ export default function Login() {
               <TextField
                 fullWidth
                 label="אימייל"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 margin="normal"
                 autoComplete="email"
+                inputProps={{ 'data-testid': 'email-input' }}
               />
 
               <Button
@@ -148,13 +150,14 @@ export default function Login() {
                 size="large"
                 disabled={loading}
                 sx={{ mt: 3, mb: 2 }}
+                data-testid="submit-button"
               >
                 {loading ? <CircularProgress size={24} /> : 'המשך'}
               </Button>
 
               <Box sx={{ textAlign: 'center' }}>
-                <Link href="/register" variant="body2">
-                  אין לך חשבון? הירשם כאן
+                <Link href="/register" variant="body2" data-testid="register-link">
+                  אין לך חשבון? <span>הרשמה</span>
                 </Link>
               </Box>
             </Box>
@@ -216,6 +219,7 @@ export default function Login() {
               <TextField
                 fullWidth
                 label="סיסמה"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -223,6 +227,7 @@ export default function Login() {
                 margin="normal"
                 autoComplete="current-password"
                 autoFocus
+                inputProps={{ 'data-testid': 'password-input' }}
               />
 
               <FormControlLabel
@@ -245,6 +250,7 @@ export default function Login() {
                   size="large"
                   disabled={loading}
                   fullWidth
+                  data-testid="submit-button"
                 >
                   {loading ? <CircularProgress size={24} /> : 'התחבר'}
                 </Button>

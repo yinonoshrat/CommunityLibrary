@@ -169,8 +169,8 @@ export default function FamilyDashboard() {
       <Grid container spacing={3} mb={4}>
         {statsData.map((stat, index) => (
           <Grid size={{ xs: 6, sm: 3 }} key={index}>
-            <Card>
-              <CardContent>
+            <Card sx={{ height: '100%' }}>
+              <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <Box display="flex" flexDirection="column" alignItems="center">
                   <Box color={stat.color} mb={1}>
                     {stat.icon}

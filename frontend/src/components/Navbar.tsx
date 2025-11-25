@@ -1,5 +1,6 @@
 import { AppBar, Toolbar, Typography, Button, Box, IconButton, Menu, MenuItem, Avatar } from '@mui/material'
-import { useNavigate } from 'react-router-dom'
+import { ArrowBack } from '@mui/icons-material'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -9,7 +10,12 @@ interface NavbarProps {
 
 export default function Navbar({ user }: NavbarProps) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+
+  // Pages that should not show back button (main navigation pages)
+  const noBackButtonPages = ['/', '/login', '/register']
+  const showBackButton = !noBackButtonPages.includes(location.pathname)
 
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget)
@@ -28,6 +34,17 @@ export default function Navbar({ user }: NavbarProps) {
   return (
     <AppBar position="static">
       <Toolbar>
+        {showBackButton && (
+          <IconButton
+            edge="start"
+            color="inherit"
+            onClick={() => navigate(-1)}
+            sx={{ mr: 2 }}
+          >
+            <ArrowBack />
+          </IconButton>
+        )}
+        
         <Typography
           variant="h6"
           component="div"

@@ -69,6 +69,7 @@ export default function BookCard({ book }: BookCardProps) {
 
   return (
     <Card
+      data-testid="book-card"
       sx={{
         height: '100%',
         display: 'flex',

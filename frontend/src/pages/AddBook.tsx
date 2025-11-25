@@ -10,14 +10,22 @@ import {
   Paper,
   Alert,
   CircularProgress,
+  Card,
+  CardContent,
+  CardMedia,
+  CardActionArea,
+  InputAdornment,
+  Divider,
 } from '@mui/material';
 import {
-  ArrowBack as BackIcon,
   Save as SaveIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiCall } from '../utils/apiCall';
+import { searchBooks, type BookSearchResult } from '../utils/bookSearch';
+import { fetchGenreMappings, deduceGenre, saveGenreMapping } from '../utils/genreMapping';
 
 interface BookFormData {
   title: string;
@@ -66,7 +74,16 @@ export default function AddBook() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string>('הספר נוסף בהצלחה! מעביר לדף הספרים...');
   const [familyId, setFamilyId] = useState<string | null>(null);
+  // Book search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<BookSearchResult[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  // Genre mapping state
+  const [genreMappings, setGenreMappings] = useState<any[]>([]);
+  const [selectedBookCategories, setSelectedBookCategories] = useState<string[]>([]);
 
   const [formData, setFormData] = useState<BookFormData>({
     title: '',
@@ -87,7 +104,13 @@ export default function AddBook() {
 
   useEffect(() => {
     fetchUserFamily();
+    loadGenreMappings();
   }, [user]);
+
+  const loadGenreMappings = async () => {
+    const mappings = await fetchGenreMappings();
+    setGenreMappings(mappings);
+  };
 
   const fetchUserFamily = async () => {
     if (!user?.id) return;
@@ -98,6 +121,74 @@ export default function AddBook() {
     } catch (err) {
       console.error('Failed to fetch user family:', err);
     }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    setSearching(true);
+    setSearchError(null);
+    setSearchResults([]);
+    
+    try {
+      // Use the searchBooks utility with sequential strategy
+      // This will try Israel National Library first, then Google Books
+      const results = await searchBooks(searchQuery, {
+        strategy: 'sequential',
+        maxResults: 10,
+      });
+      
+      if (results.length === 0) {
+        setSearchError('לא נמצאו תוצאות. נסה חיפוש אחר או מלא את הפרטים ידנית.');
+      } else {
+        setSearchResults(results);
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+      setSearchError('שגיאה בחיפוש. נסה שוב או מלא את הפרטים ידנית.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Auto-search when user stops typing
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearchError(null);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      handleSearch();
+    }, 800); // Wait 800ms after user stops typing
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSelectBook = (book: BookSearchResult) => {
+    // Deduce genre from Google Books categories
+    const deducedGenre = book.categories ? deduceGenre(book.categories, genreMappings) : null;
+    
+    setFormData({
+      ...formData,
+      title: book.title,
+      author: book.author,
+      isbn: book.isbn,
+      year_published: book.year_published ? book.year_published.toString() : '',
+      publisher: book.publisher,
+      pages: book.pages ? book.pages.toString() : '',
+      summary: book.summary,
+      cover_image_url: book.cover_image_url,
+      genre: deducedGenre || formData.genre, // Use deduced genre or keep current
+    });
+    
+    // Store categories for later saving the mapping
+    setSelectedBookCategories(book.categories || []);
+    
+    // Clear search results after selection
+    setSearchResults([]);
+    setSearchQuery('');
   };
 
   const handleChange = (field: keyof BookFormData) => (
@@ -160,12 +251,31 @@ export default function AddBook() {
         status: 'available',
       };
 
-      await apiCall('/api/books', {
+      const response = await apiCall('/api/books', {
         method: 'POST',
         body: JSON.stringify(bookData),
       });
 
+      // Check if book was merged with existing catalog entry
+      const wasMerged = response.book?._merged;
+
+      // Save genre mapping if we have categories from search
+      if (selectedBookCategories.length > 0 && formData.genre) {
+        // Save mapping for each category
+        for (const category of selectedBookCategories) {
+          await saveGenreMapping(category, formData.genre);
+        }
+      }
+
       setSuccess(true);
+      
+      // Show different success message based on merge status
+      if (wasMerged) {
+        setSuccessMessage('הספר כבר קיים בקטלוג המשותף! נוסף לספריית המשפחה שלך.');
+      } else {
+        setSuccessMessage('הספר נוסף בהצלחה! מעביר לדף הספרים...');
+      }
+      
       setTimeout(() => {
         navigate('/books');
       }, 1500);
@@ -179,13 +289,6 @@ export default function AddBook() {
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box mb={4}>
-        <Button
-          startIcon={<BackIcon />}
-          onClick={() => navigate('/books')}
-          sx={{ mb: 2 }}
-        >
-          חזרה לספרים
-        </Button>
         <Typography variant="h4" component="h1" gutterBottom>
           הוסף ספר חדש
         </Typography>
@@ -202,9 +305,96 @@ export default function AddBook() {
 
       {success && (
         <Alert severity="success" sx={{ mb: 3 }}>
-          הספר נוסף בהצלחה! מעביר לדף הספרים...
+          {successMessage}
         </Alert>
       )}
+
+      {/* Book Search Section */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          חפש ספר במאגרים
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          חפש ספר בספרייה הלאומית או ב-Google Books ומלא את הפרטים אוטומטית
+        </Typography>
+        
+        <Box display="flex" gap={2}>
+          <TextField
+            fullWidth
+            placeholder="חפש לפי שם ספר, מחבר או ISBN..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            disabled={searching || success}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+              endAdornment: searching ? (
+                <InputAdornment position="end">
+                  <CircularProgress size={20} />
+                </InputAdornment>
+              ) : null,
+            }}
+          />
+        </Box>
+
+        {searchError && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            {searchError}
+          </Alert>
+        )}
+
+        {searchResults.length > 0 && (
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              תוצאות חיפוש ({searchResults.length}):
+            </Typography>
+            <Grid container spacing={2}>
+              {searchResults.map((book, index) => (
+                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={index}>
+                  <Card>
+                    <CardActionArea onClick={() => handleSelectBook(book)}>
+                      {book.cover_image_url && (
+                        <CardMedia
+                          component="img"
+                          height="200"
+                          image={book.cover_image_url}
+                          alt={book.title}
+                          sx={{ objectFit: 'contain', bgcolor: 'grey.100' }}
+                        />
+                      )}
+                      <CardContent>
+                        <Typography variant="subtitle2" noWrap>
+                          {book.title}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" noWrap>
+                          {book.author}
+                        </Typography>
+                        {book.year_published > 0 && (
+                          <Typography variant="caption" color="text.secondary">
+                            {book.year_published}
+                          </Typography>
+                        )}
+                        <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+                          מקור: {book.source}
+                        </Typography>
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        )}
+      </Paper>
+
+      <Divider sx={{ my: 3 }}>
+        <Typography variant="body2" color="text.secondary">
+          או מלא פרטים ידנית
+        </Typography>
+      </Divider>
 
       <Paper sx={{ p: 3 }}>
         <Box component="form" onSubmit={handleSubmit}>

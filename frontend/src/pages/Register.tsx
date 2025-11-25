@@ -85,6 +85,12 @@ export default function Register() {
         setError('נא למלא את כל השדות החובה')
         return
       }
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(email)) {
+        setError('אימייל לא תקין')
+        return
+      }
       if (password !== confirmPassword) {
         setError('הסיסמאות אינן תואמות')
         return
@@ -152,8 +158,8 @@ export default function Register() {
     <Container maxWidth="md">
       <Box sx={{ mt: 8, mb: 4 }}>
         <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h4" component="h1" gutterBottom align="center">
-            הרשמה
+          <Typography variant="h4" component="h1" gutterBottom align="center" data-testid="register-title">
+            הרשמה לספרייה הקהילתית
           </Typography>
 
           <Stepper activeStep={activeStep} sx={{ my: 4 }}>
@@ -175,32 +181,38 @@ export default function Register() {
               <TextField
                 fullWidth
                 label="שם מלא"
+                name="name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
                 margin="normal"
+                inputProps={{ 'data-testid': 'name-input' }}
               />
 
               <TextField
                 fullWidth
                 label="אימייל"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 margin="normal"
                 autoComplete="email"
+                inputProps={{ 'data-testid': 'email-input' }}
               />
 
               <TextField
                 fullWidth
                 label="סיסמה"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 margin="normal"
                 helperText="לפחות 6 תווים"
+                inputProps={{ 'data-testid': 'password-input' }}
               />
 
               <TextField
@@ -216,11 +228,13 @@ export default function Register() {
               <TextField
                 fullWidth
                 label="טלפון"
+                name="phone"
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 margin="normal"
                 helperText="לתקשורת עם משפחות אחרות"
+                inputProps={{ 'data-testid': 'phone-input' }}
               />
 
               <TextField
@@ -278,11 +292,13 @@ export default function Register() {
                   <TextField
                     fullWidth
                     label="שם משפחה"
+                    name="familyName"
                     value={familyName}
                     onChange={(e) => setFamilyName(e.target.value)}
                     required
                     margin="normal"
                     helperText="לדוגמה: משפחת כהן"
+                    inputProps={{ 'data-testid': 'familyName-input' }}
                   />
 
                   <TextField
@@ -318,6 +334,8 @@ export default function Register() {
               onClick={handleNext}
               disabled={loading}
               sx={{ mr: 'auto' }}
+              data-testid="submit-button"
+              type={activeStep === 0 ? 'button' : 'submit'}
             >
               {loading ? (
                 <CircularProgress size={24} />
