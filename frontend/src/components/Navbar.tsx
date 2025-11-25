@@ -83,6 +83,9 @@ export default function Navbar({ user }: NavbarProps) {
               <MenuItem onClick={() => { navigate('/books'); handleClose(); }}>
                 הספרים שלי
               </MenuItem>
+              <MenuItem onClick={() => { navigate('/search'); handleClose(); }}>
+                חיפוש ספרים
+              </MenuItem>
               <MenuItem onClick={() => { navigate('/loans'); handleClose(); }}>
                 השאלות
               </MenuItem>

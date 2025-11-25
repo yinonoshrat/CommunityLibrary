@@ -17,6 +17,7 @@ import MyBooks from './pages/MyBooks'
 import AddBook from './pages/AddBook'
 import BookDetails from './pages/BookDetails'
 import EditBook from './pages/EditBook'
+import SearchBooks from './pages/SearchBooks'
 
 // Create RTL cache
 const cacheRtl = createCache({

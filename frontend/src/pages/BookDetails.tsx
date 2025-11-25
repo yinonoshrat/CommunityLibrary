@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
+  Divider,
 } from '@mui/material';
 import {
   ArrowBack as BackIcon,
@@ -27,6 +28,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiCall } from '../utils/apiCall';
+import FamilyAvailability from '../components/FamilyAvailability';
 
 interface Book {
   id: string;
@@ -293,6 +295,15 @@ export default function BookDetails() {
                 </Typography>
               </Box>
             )}
+
+            {/* Community Availability Section */}
+            <Box>
+              <Divider sx={{ my: 3 }} />
+              <Typography variant="h5" gutterBottom>
+                זמינות בקהילה
+              </Typography>
+              <FamilyAvailability bookId={book.id} />
+            </Box>
 
             {isOwner && (
               <Box display="flex" gap={2}>

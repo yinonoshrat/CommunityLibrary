@@ -300,13 +300,67 @@ app.get('/api/books', async (req, res) => {
 
 app.get('/api/books/search', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, genre, ageLevel, available } = req.query;
+    
     if (!q) {
       return res.status(400).json({ error: 'Search query required' });
     }
-    const books = await db.books.search(q);
-    res.json({ books });
+
+    // Search across all books in the community
+    let query = supabase
+      .from('books_view')
+      .select(`
+        *,
+        families:family_id (
+          id,
+          name,
+          phone,
+          whatsapp
+        )
+      `)
+      .or(`title.ilike.%${q}%,author.ilike.%${q}%,series.ilike.%${q}%`);
+
+    // Apply filters
+    if (genre && genre !== 'all') {
+      query = query.eq('genre', genre);
+    }
+    
+    if (ageLevel && ageLevel !== 'all') {
+      query = query.eq('age_level', ageLevel);
+    }
+    
+    if (available === 'true') {
+      query = query.eq('status', 'available');
+    }
+
+    const { data: books, error } = await query.order('title');
+
+    if (error) throw error;
+
+    // Group books by title to show all families that have each book
+    const booksByTitle = {};
+    for (const book of (books || [])) {
+      const key = `${book.title}-${book.author}`;
+      if (!booksByTitle[key]) {
+        booksByTitle[key] = {
+          ...book,
+          families: [book.families],
+          availableCount: book.status === 'available' ? 1 : 0,
+          totalCount: 1
+        };
+      } else {
+        booksByTitle[key].families.push(book.families);
+        booksByTitle[key].totalCount++;
+        if (book.status === 'available') {
+          booksByTitle[key].availableCount++;
+        }
+      }
+    }
+
+    const results = Object.values(booksByTitle);
+    res.json({ books: results });
   } catch (error) {
+    console.error('Search error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -317,6 +371,72 @@ app.get('/api/books/:id', async (req, res) => {
     res.json({ book });
   } catch (error) {
     res.status(404).json({ error: error.message });
+  }
+});
+
+// Get all families that have a specific book (by title/author)
+app.get('/api/books/:id/families', async (req, res) => {
+  try {
+    // First get the family_book to get its book_catalog_id
+    const { data: familyBook, error: fbError } = await supabase
+      .from('family_books')
+      .select('book_catalog_id')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fbError) throw fbError;
+
+    const catalogId = familyBook.book_catalog_id;
+
+    // Get the book catalog entry
+    const { data: book, error: bookError } = await supabase
+      .from('book_catalog')
+      .select('*')
+      .eq('id', catalogId)
+      .single();
+
+    if (bookError) throw bookError;
+
+    // Find all family_books with this catalog entry
+    const { data: familyBooks, error } = await supabase
+      .from('family_books')
+      .select(`
+        id,
+        status,
+        notes,
+        families:family_id (
+          id,
+          name,
+          phone,
+          whatsapp
+        )
+      `)
+      .eq('book_catalog_id', catalogId);
+
+    if (error) throw error;
+
+    // Check loan status for each
+    const results = await Promise.all(familyBooks.map(async (fb) => {
+      const { data: loans } = await supabase
+        .from('loans')
+        .select('*')
+        .eq('family_book_id', fb.id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      return {
+        familyBookId: fb.id,
+        family: fb.families,
+        status: fb.status,
+        isAvailable: fb.status === 'available' && !loans,
+        currentLoan: loans || null
+      };
+    }));
+
+    res.json({ book, families: results });
+  } catch (error) {
+    console.error('Error fetching book families:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
