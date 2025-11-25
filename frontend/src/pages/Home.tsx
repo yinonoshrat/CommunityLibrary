@@ -13,7 +13,6 @@ import {
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  Book as BookIcon,
   SwapHoriz as SwapIcon,
   People as PeopleIcon,
   LibraryBooks,

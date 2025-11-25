@@ -163,6 +163,7 @@ class GoogleBooksSource implements BookSearchSource {
  * Open Library Search Source (Example - currently disabled)
  * Uncomment and add to SEARCH_SOURCES to enable
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class OpenLibrarySource implements BookSearchSource {
   name = 'openlibrary';
   displayName = 'Open Library';
