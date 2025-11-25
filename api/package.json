@@ -5,11 +5,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.84.0",
     "cors": "^2.8.5",
     "express": "^4.18.2"
   },
   "devDependencies": {
     "@types/supertest": "^6.0.3",
+    "dotenv": "^17.2.3",
     "supertest": "^7.1.4",
     "vitest": "^4.0.13"
   }

@@ -95,6 +95,18 @@ The backend folder is now a thin wrapper:
 - **For each feature**: Create tests or update existing tests before marking feature complete
 - **After changes**: Always run tests to verify everything works
 - **Test locations**: Frontend tests in `frontend/src/__tests__/`, API tests in `api/__tests__/`
+- **Critical: Test error handling**: Every API endpoint MUST have tests that verify:
+  1. Valid JSON response is returned even on errors
+  2. Missing/invalid required fields return 400 with JSON error
+  3. Server errors return proper JSON error (not empty response or HTML)
+  4. Error messages are clear and actionable
+- **Test pattern**: For each API endpoint, create tests for:
+  - Happy path (valid input returns expected output)
+  - Missing required fields
+  - Invalid data types
+  - Edge cases (null, undefined, empty strings)
+  - Duplicate data (if applicable)
+  - Always verify `Content-Type: application/json` header in responses
 
 ### Task Management
 - **Break down large tasks**: Split big features into smaller, manageable sub-tasks
