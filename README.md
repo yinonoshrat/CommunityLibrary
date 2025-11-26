@@ -9,6 +9,7 @@ CommunityLibrary/
 ├── frontend/          # React + Vite + TypeScript frontend
 ├── backend/           # Local development server (wraps api/)
 ├── api/              # Vercel serverless functions (shared code)
+├── shared/           # Shared libraries (used by both frontend and backend)
 └── vercel.json       # Vercel deployment configuration
 ```
 
@@ -40,6 +41,30 @@ npm install                    # Root dependencies
 cd frontend && npm install     # Frontend dependencies
 cd backend && npm install      # Backend dependencies
 ```
+
+### Environment Variables
+
+1. Pull environment variables from Vercel:
+```bash
+npx vercel env pull .env.development.local
+```
+
+2. Or copy the example file and fill in your values:
+```bash
+cp .env.development.local.example .env.development.local
+```
+
+Required environment variables:
+- `POSTGRES_URL`: Supabase database connection string (with pooler)
+- `POSTGRES_URL_NON_POOLING`: Direct database connection (for migrations)
+- `SUPABASE_URL`: Supabase project URL
+- `SUPABASE_ANON_KEY`: Supabase public API key
+- `SUPABASE_SERVICE_ROLE_KEY`: Supabase admin key
+- `GEMINI_API_KEY`: Google Gemini API key for AI vision (Phase 7)
+
+**Get Gemini API key**: https://aistudio.google.com/app/apikey
+
+Without `GEMINI_API_KEY`, the bulk book upload with AI vision feature will not work.
 
 ### Running Locally
 

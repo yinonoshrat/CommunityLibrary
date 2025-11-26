@@ -14,7 +14,6 @@ import {
   DialogContent,
   DialogContentText,
   DialogActions,
-  Divider,
 } from '@mui/material';
 import {
   ArrowBack as BackIcon,
@@ -28,7 +27,9 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiCall } from '../utils/apiCall';
-import FamilyAvailability from '../components/FamilyAvailability';
+import CreateLoanDialog from '../components/CreateLoanDialog';
+import BookReviews from '../components/BookReviews';
+import LikeButton from '../components/LikeButton';
 
 interface Book {
   id: string;
@@ -59,6 +60,7 @@ export default function BookDetails() {
   const [userFamilyId, setUserFamilyId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [loanDialogOpen, setLoanDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchUserFamily();
@@ -108,6 +110,10 @@ export default function BookDetails() {
       setDeleting(false);
       setDeleteDialogOpen(false);
     }
+  };
+
+  const handleLoanSuccess = () => {
+    fetchBook(); // Refresh book details to update status
   };
 
   const getStatusConfig = () => {
@@ -296,17 +302,22 @@ export default function BookDetails() {
               </Box>
             )}
 
-            {/* Community Availability Section */}
-            <Box>
-              <Divider sx={{ my: 3 }} />
-              <Typography variant="h5" gutterBottom>
-                זמינות בקהילה
-              </Typography>
-              <FamilyAvailability bookId={book.id} />
+            {/* Like Button */}
+            <Box mb={3}>
+              <LikeButton bookId={book.id} size="medium" showCount={true} />
             </Box>
 
             {isOwner && (
               <Box display="flex" gap={2}>
+                {book.status === 'available' && (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => setLoanDialogOpen(true)}
+                  >
+                    השאל ספר
+                  </Button>
+                )}
                 <Button
                   variant="contained"
                   startIcon={<EditIcon />}
@@ -326,6 +337,11 @@ export default function BookDetails() {
             )}
           </Grid>
         </Grid>
+      </Paper>
+
+      {/* Reviews Section */}
+      <Paper sx={{ p: 3, mt: 3 }}>
+        <BookReviews bookId={book.id} bookTitle={book.title} />
       </Paper>
 
       {/* Delete Confirmation Dialog */}
@@ -351,6 +367,18 @@ export default function BookDetails() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Create Loan Dialog */}
+      {userFamilyId && user?.id && (
+        <CreateLoanDialog
+          open={loanDialogOpen}
+          onClose={() => setLoanDialogOpen(false)}
+          book={book}
+          userFamilyId={userFamilyId}
+          userId={user.id}
+          onSuccess={handleLoanSuccess}
+        />
+      )}
     </Container>
   );
 }

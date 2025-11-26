@@ -1,4 +1,4 @@
-import { ThemeProvider, CssBaseline } from '@mui/material'
+import { ThemeProvider, CssBaseline, Box } from '@mui/material'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { prefixer } from 'stylis'
 import rtlPlugin from 'stylis-plugin-rtl'
@@ -17,6 +17,8 @@ import MyBooks from './pages/MyBooks'
 import AddBook from './pages/AddBook'
 import BookDetails from './pages/BookDetails'
 import EditBook from './pages/EditBook'
+import LoansDashboard from './pages/LoansDashboard'
+import Recommendations from './pages/Recommendations'
 
 // Create RTL cache
 const cacheRtl = createCache({
@@ -32,9 +34,10 @@ function AppRoutes() {
   }
 
   return (
-    <>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', m: 0, p: 0 }}>
       <Navbar user={user} />
-      <Routes>
+      <Box component="main" sx={{ flexGrow: 1, p: 0, m: 0 }}>
+        <Routes>
         <Route path="/" element={user ? <Home /> : <Navigate to="/login" />} />
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
         <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
@@ -43,12 +46,14 @@ function AppRoutes() {
         <Route path="/books/:id" element={user ? <BookDetails /> : <Navigate to="/login" />} />
         <Route path="/books/:id/edit" element={user ? <EditBook /> : <Navigate to="/login" />} />
         <Route path="/search" element={user ? <Home /> : <Navigate to="/login" />} />
-        <Route path="/loans" element={user ? <Home /> : <Navigate to="/login" />} />
+        <Route path="/loans" element={user ? <LoansDashboard /> : <Navigate to="/login" />} />
+        <Route path="/recommendations" element={user ? <Recommendations /> : <Navigate to="/login" />} />
         <Route path="/family" element={user ? <FamilyDashboard /> : <Navigate to="/login" />} />
         <Route path="/family/members" element={user ? <FamilyMembers /> : <Navigate to="/login" />} />
         <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
-      </Routes>
-    </>
+        </Routes>
+      </Box>
+    </Box>
   )
 }
 

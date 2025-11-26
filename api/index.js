@@ -1,9 +1,60 @@
 // Vercel serverless function entry point
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
 import { db, supabase } from './db/adapter.js';
+import GeminiVisionService from './services/geminiVision.js';
+import OpenAIVisionService from './services/openaiVision.js';
+import HybridVisionService from './services/hybridVision.js';
+import { searchBookDetails } from './services/bookSearch.js';
 
 const app = express();
+
+// Initialize AI Vision Service (priority order: Hybrid > OpenAI > Gemini)
+let aiVisionService = null;
+let serviceName = 'none';
+try {
+  // Hybrid (Google Cloud Vision OCR + Gemini) - Best accuracy
+  if ((process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_CLOUD_CREDENTIALS) && process.env.GEMINI_API_KEY) {
+    aiVisionService = new HybridVisionService();
+    serviceName = 'Hybrid (Google Cloud OCR + Gemini)';
+  }
+  // OpenAI GPT-4o-mini - Fast and accurate
+  else if (process.env.OPENAI_API_KEY) {
+    aiVisionService = new OpenAIVisionService();
+    serviceName = 'OpenAI (GPT-4o-mini)';
+  }
+  // Gemini only - Fallback
+  else if (process.env.GEMINI_API_KEY) {
+    aiVisionService = new GeminiVisionService();
+    serviceName = 'Gemini (2.5 Flash)';
+  }
+  
+  if (aiVisionService) {
+    console.log(`✓ AI Vision Service initialized: ${serviceName}`);
+  } else {
+    console.warn('⚠ No AI API keys found - bulk upload features will be disabled');
+    console.warn('  Set one of: OPENAI_API_KEY, GEMINI_API_KEY, or GOOGLE_APPLICATION_CREDENTIALS');
+  }
+} catch (error) {
+  console.error('✗ Failed to initialize AI Vision Service:', error.message);
+  console.error('  Service attempted:', serviceName);
+}
+
+// Configure multer for image uploads (memory storage)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
 
 // Middleware
 app.use(cors());
@@ -661,6 +712,216 @@ app.post('/api/genre-mappings', async (req, res) => {
   } catch (error) {
     console.error('Failed to save genre mapping:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== BULK UPLOAD ROUTES ====================
+
+// Detect books from uploaded image using AI
+app.post('/api/books/detect-from-image', upload.single('image'), async (req, res) => {
+  try {
+    console.log('=== DETECT FROM IMAGE REQUEST ===');
+    console.log('Has GEMINI_API_KEY:', !!process.env.GEMINI_API_KEY);
+    console.log('aiVisionService initialized:', !!aiVisionService);
+    console.log('Request file:', req.file ? {
+      fieldname: req.file.fieldname,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    } : 'NO FILE');
+
+    // Check if AI service is available
+    if (!aiVisionService) {
+      console.error('AI service not initialized. Check GEMINI_API_KEY environment variable.');
+      return res.status(503).json({
+        error: 'AI vision service not configured',
+        message: 'GEMINI_API_KEY environment variable is missing'
+      });
+    }
+
+    // Check if image was uploaded
+    if (!req.file) {
+      console.error('No image file in request');
+      return res.status(400).json({ error: 'No image provided' });
+    }
+
+    console.log(`Processing image: ${req.file.originalname}, size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
+
+    // Detect books using AI
+    const detectedBooks = await aiVisionService.detectBooksFromImage(req.file.buffer);
+
+    console.log(`Successfully detected ${detectedBooks.length} books, starting online search...`);
+
+    // Search for book details in parallel
+    const bookSearchPromises = detectedBooks.map(async (book) => {
+      try {
+        const bookDetails = await searchBookDetails(book.title, book.author);
+        
+        if (bookDetails && bookDetails.confidence >= 70) {
+          // High confidence - merge all details
+          return {
+            ...book,
+            ...bookDetails,
+            confidence: 'high',
+            confidenceScore: bookDetails.confidence
+          };
+        } else if (bookDetails && bookDetails.confidence >= 40) {
+          // Medium confidence - merge but keep original title/author
+          return {
+            title: book.title,
+            author: book.author || bookDetails.author,
+            publisher: bookDetails.publisher,
+            publish_year: bookDetails.publish_year,
+            pages: bookDetails.pages,
+            description: bookDetails.description,
+            cover_image_url: bookDetails.cover_image_url,
+            isbn: bookDetails.isbn,
+            genre: bookDetails.genre,
+            age_range: bookDetails.age_range,
+            language: bookDetails.language,
+            confidence: 'medium',
+            confidenceScore: bookDetails.confidence
+          };
+        } else {
+          // Low confidence - keep AI detected data only
+          return {
+            ...book,
+            confidence: 'low',
+            confidenceScore: bookDetails?.confidence || 0
+          };
+        }
+      } catch (error) {
+        console.error(`Search error for "${book.title}":`, error.message);
+        return {
+          ...book,
+          confidence: 'low',
+          confidenceScore: 0
+        };
+      }
+    });
+
+    const enrichedBooks = await Promise.all(bookSearchPromises);
+
+    // Sort by confidence (high first, then medium, then low)
+    const sortedBooks = enrichedBooks.sort((a, b) => {
+      const confidenceOrder = { high: 3, medium: 2, low: 1 };
+      const orderDiff = confidenceOrder[b.confidence] - confidenceOrder[a.confidence];
+      if (orderDiff !== 0) return orderDiff;
+      // Within same confidence level, sort by confidence score
+      return b.confidenceScore - a.confidenceScore;
+    });
+
+    console.log(`Enriched ${sortedBooks.length} books with online data`);
+    console.log(`High confidence: ${sortedBooks.filter(b => b.confidence === 'high').length}`);
+    console.log(`Medium confidence: ${sortedBooks.filter(b => b.confidence === 'medium').length}`);
+    console.log(`Low confidence: ${sortedBooks.filter(b => b.confidence === 'low').length}`);
+
+    res.json({
+      success: true,
+      books: sortedBooks,
+      count: sortedBooks.length
+    });
+  } catch (error) {
+    console.error('=== IMAGE DETECTION ERROR ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      error: 'Failed to detect books from image',
+      message: error.message
+    });
+  }
+});
+
+// Bulk add books to catalog
+app.post('/api/books/bulk-add', async (req, res) => {
+  try {
+    const { books } = req.body;
+    const userId = req.headers['x-user-id']; // From auth context
+
+    // Get user's family ID
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('family_id')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !userData) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    const familyId = userData.family_id;
+
+    // Validate input
+    if (!Array.isArray(books) || books.length === 0) {
+      return res.status(400).json({ error: 'No books provided' });
+    }
+
+    if (books.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 books per batch' });
+    }
+
+    // Validate and add each book
+    const addedBooks = [];
+    const errors = [];
+    
+    for (const book of books) {
+      try {
+        // Basic validation
+        if (!book.title || typeof book.title !== 'string') {
+          errors.push({ book, error: 'Missing or invalid title' });
+          continue;
+        }
+
+        // Prepare book data
+        const bookData = {
+          title: book.title.trim(),
+          author: book.author ? book.author.trim() : 'לא ידוע',
+          family_id: familyId,
+          status: 'available',
+          genre: book.genre || null,
+          age_range: book.age_range || null,
+          publish_year: book.publish_year || null,
+          publisher: book.publisher || null,
+          pages: book.pages || null,
+          description: book.description || null,
+          cover_image_url: book.cover_image_url || null,
+          isbn: book.isbn || null,
+          series: book.series || null
+        };
+
+        // Insert book into database
+        const { data, error } = await supabase
+          .from('books')
+          .insert(bookData)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Failed to insert book:', error);
+          errors.push({ book, error: error.message });
+          continue;
+        }
+
+        addedBooks.push(data);
+        
+      } catch (error) {
+        console.error('Book processing error:', error);
+        errors.push({ book, error: error.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      added: addedBooks.length,
+      failed: errors.length,
+      books: addedBooks,
+      errors: errors
+    });
+    
+  } catch (error) {
+    console.error('Bulk add error:', error);
+    res.status(500).json({ error: 'Failed to add books', message: error.message });
   }
 });
 

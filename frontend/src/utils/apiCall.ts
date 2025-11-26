@@ -8,10 +8,13 @@ export async function apiCall<T = any>(
     // Get auth token from Supabase
     const { data: { session } } = await supabase.auth.getSession();
     
+    // Don't set Content-Type for FormData - browser will set it with boundary
+    const isFormData = options?.body instanceof FormData;
+    
     const response = await fetch(endpoint, {
       ...options,
       headers: {
-        'Content-Type': 'application/json',
+        ...(!isFormData && { 'Content-Type': 'application/json' }),
         ...(session?.access_token && { 'Authorization': `Bearer ${session.access_token}` }),
         ...options?.headers,
       },

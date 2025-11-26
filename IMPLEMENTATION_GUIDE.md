@@ -615,186 +615,124 @@ app.get('/api/books/:id/families', async (req, res) => {
 ## 🔄 Phase 5: Loans Management Module
 
 **Priority:** HIGH
-**Estimated Time:** 5-6 hours
-**Dependencies:** Phase 4 complete
+**Estimated Time:** 4-5 hours
+**Dependencies:** Phase 3 complete
+**Note:** Simplified workflow - owner family manages loans directly without approval flow
 
-### 5.1 Request Book Loan
+### 5.1 Create Loan (Owner Marks Book as Loaned)
 **Files to create:**
-- `frontend/src/components/LoanRequestDialog.tsx`
-- `frontend/src/pages/LoanRequest.tsx`
+- `frontend/src/components/CreateLoanDialog.tsx`
 
 **Features:**
-- Request loan from book details page
-- Select which family to request from (if multiple)
-- Add optional message/note
-- Suggest return date
-- Send request notification (email/WhatsApp)
-- Track request status
+- Owner marks book as loaned out from book details page
+- Select borrower family from dropdown (all families in community)
+- Add optional notes
+- Book status automatically updates to "on loan"
 
 **API Endpoints:**
 - `POST /api/loans` (already exists, may need enhancement)
-- `POST /api/notifications` (need to implement)
 
-**New API Implementation:**
+**Enhanced API Implementation:**
 ```javascript
 // In api/index.js
 app.post('/api/loans', async (req, res) => {
-  const { bookId, ownerFamilyId, borrowerFamilyId, notes, requestedReturnDate } = req.body;
-  // Create loan request with status 'pending'
-  // Send notification to owner family
+  const { bookId, borrowerFamilyId, notes } = req.body;
+  // Verify requester is book owner
+  // Create loan with status 'active'
+  // Update book status to 'on_loan'
   // Return loan details
-});
-
-app.post('/api/notifications', async (req, res) => {
-  const { familyId, type, message, link } = req.body;
-  // Send WhatsApp message (wa.me link)
-  // Or email notification
-  // Log notification
 });
 ```
 
 **Design:**
 ```
 ┌──────────────────────────────┐
-│  בקשת השאלה                  │
+│  השאל ספר                    │
 ├──────────────────────────────┤
 │  ספר: הארי פוטר               │
-│  מאת: משפחת כהן               │
 │                              │
-│  תאריך החזרה משוער:          │
-│  [📅 01/12/2025]             │
+│  משפחה שואלת:                │
+│  [בחר משפחה ▼]               │
 │                              │
 │  הערות (אופציונלי):          │
 │  [_____________]             │
 │                              │
-│  [שלח בקשה]  [ביטול]         │
+│  [השאל]  [ביטול]             │
 └──────────────────────────────┘
 ```
 
 **Testing:**
-- [ ] Request creates loan record
-- [ ] Status set to 'pending'
-- [ ] Notification sent to owner
-- [ ] Cannot request if unavailable
-- [ ] Can only request once
+- [ ] Only book owner can create loan
+- [ ] Loan created with 'active' status
+- [ ] Book status updates to 'on_loan'
+- [ ] Borrower family dropdown shows all families
+- [ ] Cannot loan already loaned book
 
 ---
 
 ### 5.2 Loans Dashboard
 **Files to create:**
 - `frontend/src/pages/LoansDashboard.tsx`
-- `frontend/src/components/LoansList.tsx`
 - `frontend/src/components/LoanCard.tsx`
 
 **Features:**
 - View all loans in one place
 - Tabs for:
-  - **בקשות שקיבלנו** (Requests received) - pending approvals
-  - **ספרים שהשאלנו** (Books we lent) - approved, active
-  - **ספרים ששאלנו** (Books we borrowed) - our active loans
-  - **היסטוריה** (History) - completed/rejected loans
+  - **ספרים שהשאלנו** (Books we lent out) - active loans we created
+  - **ספרים ששאלנו** (Books we borrowed) - books others loaned to us
+  - **היסטוריה** (History) - completed/returned loans
 - For each loan:
-  - Book details
-  - Other family name & contact
-  - Status badge
-  - Due date
-  - Actions based on status
+  - Book details with cover image
+  - Other family name & contact (WhatsApp)
+  - Loan date
+  - Notes
+  - Action button: "סמן כהוחזר" (Mark as returned) for lent books
 
 **API Endpoints (already exist):**
-- `GET /api/loans?borrowerFamilyId=:id`
-- `GET /api/loans?ownerFamilyId=:id`
-- `GET /api/loans?status=pending`
+- `GET /api/loans?ownerFamilyId=:id&status=active` - Books we lent
+- `GET /api/loans?borrowerFamilyId=:id&status=active` - Books we borrowed
+- `GET /api/loans?ownerFamilyId=:id&status=returned` - Our loan history
+- `GET /api/loans?borrowerFamilyId=:id&status=returned` - Books we returned
 
 **Design:**
 ```
 ┌──────────────────────────────┐
 │  ניהול השאלות                 │
 ├──────────────────────────────┤
-│  [בקשות שקיבלנו] [השאלנו]    │
-│  [שאלנו] [היסטוריה]          │
+│  [השאלנו] [שאלנו] [היסטוריה] │
 ├──────────────────────────────┤
 │  📕 הארי פוטר                │
-│     ל: משפחת לוי              │
-│     📅 תאריך החזרה: 01/12    │
-│     🟡 ממתין לאישור           │
-│     [✅ אשר]  [❌ דחה]        │
+│     ל: משפחת לוי [💬]         │
+│     📝 הערות: ...             │
+│     [✓ סמן כהוחזר]           │
 ├──────────────────────────────┤
 │  📗 הוביט                    │
-│     ל: משפחת אברהם            │
-│     📅 תאריך החזרה: 15/12    │
-│     🟢 פעיל                  │
+│     ל: משפחת אברהם [💬]       │
 │     [✓ סמן כהוחזר]           │
 └──────────────────────────────┘
 ```
 
 **Testing:**
 - [ ] Tabs show correct loans
-- [ ] Pending requests visible
-- [ ] Active loans tracked
-- [ ] History includes completed
-- [ ] Contact info accessible
+- [ ] Lent books tab shows books we loaned out
+- [ ] Borrowed books tab shows books we borrowed
+- [ ] History shows completed loans
+- [ ] Contact buttons work (WhatsApp)
+- [ ] Return button only on lent books tab
 
 ---
 
-### 5.3 Approve/Reject Loan Request
-**Files to create:**
-- `frontend/src/components/LoanApprovalDialog.tsx`
-
-**Features:**
-- Owner can approve or reject request
-- If approve:
-  - Set actual return date
-  - Add notes
-  - Mark book as on loan
-  - Send confirmation to borrower
-- If reject:
-  - Add reason (optional)
-  - Send notification to borrower
-  - Free up for other requests
-
-**API Endpoints:**
-- `PUT /api/loans/:id/approve` (need to implement)
-- `PUT /api/loans/:id/reject` (need to implement)
-
-**New API Implementation:**
-```javascript
-// In api/index.js
-app.put('/api/loans/:id/approve', async (req, res) => {
-  const { returnDate, notes } = req.body;
-  // Update loan status to 'active'
-  // Update book status to 'on_loan'
-  // Send notification to borrower
-  // Return updated loan
-});
-
-app.put('/api/loans/:id/reject', async (req, res) => {
-  const { reason } = req.body;
-  // Update loan status to 'rejected'
-  // Send notification to borrower
-  // Return updated loan
-});
-```
-
-**Testing:**
-- [ ] Approve updates status correctly
-- [ ] Book marked as on loan
-- [ ] Borrower receives notification
-- [ ] Reject cancels request
-- [ ] Book remains available
-
----
-
-### 5.4 Return Book
+### 5.3 Return Book (Mark as Returned)
 **Files to create:**
 - `frontend/src/components/ReturnBookDialog.tsx`
 
 **Features:**
-- Owner marks book as returned
-- Add return date (auto-set to today)
-- Optional rating/feedback on borrower
+- Owner marks loaned book as returned
+- Confirm return date (defaults to today)
+- Optional notes about return condition
 - Update book status to available
-- Send confirmation to borrower
-- Move loan to history
+- Move loan to history (status: 'returned')
+- Simple confirmation dialog
 
 **API Endpoints:**
 - `PUT /api/loans/:id/return` (need to implement)
@@ -804,19 +742,38 @@ app.put('/api/loans/:id/reject', async (req, res) => {
 // In api/index.js
 app.put('/api/loans/:id/return', async (req, res) => {
   const { actualReturnDate, notes } = req.body;
+  // Verify requester is loan owner
   // Update loan status to 'returned'
-  // Set actual_return_date
+  // Set actual_return_date (default: today)
   // Update book status to 'available'
-  // Send notification to borrower
   // Return updated loan
 });
 ```
 
+**Design:**
+```
+┌──────────────────────────────┐
+│  סמן כהוחזר                  │
+├──────────────────────────────┤
+│  ספר: הארי פוטר               │
+│  שאל: משפחת לוי               │
+│                              │
+│  תאריך החזרה:                │
+│  [📅 25/11/2025] (היום)      │
+│                              │
+│  הערות (אופציונלי):          │
+│  [_____________]             │
+│                              │
+│  [אשר החזרה]  [ביטול]        │
+└──────────────────────────────┘
+```
+
 **Testing:**
-- [ ] Return marks book available
-- [ ] Loan moves to history
-- [ ] Both families notified
-- [ ] Cannot return twice
+- [ ] Only loan owner can mark as returned
+- [ ] Return date defaults to today
+- [ ] Book status updates to 'available'
+- [ ] Loan moves to history tab
+- [ ] Cannot return same loan twice
 
 ---
 
@@ -825,24 +782,25 @@ app.put('/api/loans/:id/return', async (req, res) => {
 **Priority:** MEDIUM
 **Estimated Time:** 4-5 hours
 **Dependencies:** Phase 5 complete
+**Status:** ✅ Complete (Implementation + E2E Tests)
 
-### 6.1 Add Book Review
-**Files to create:**
-- `frontend/src/components/AddReviewDialog.tsx`
-- `frontend/src/components/ReviewForm.tsx`
+### 6.1 Add Book Review ✅
+**Files created:**
+- `frontend/src/components/AddReviewDialog.tsx` ✅
+- `frontend/src/components/ReviewForm.tsx` ✅
 
 **Features:**
-- Rate book (1-5 stars or like/dislike)
-- Write review text
-- Add to any book in community
-- Cannot review same book twice
-- Can edit own review
-- Display reviewer name
+- Rate book (1-5 stars) ✅
+- Write review text ✅
+- Add to any book in community ✅
+- Cannot review same book twice ✅
+- Can edit own review ✅
+- Display reviewer name ✅
 
 **API Endpoints (already exist):**
-- `POST /api/reviews`
-- `PUT /api/reviews/:id`
-- `DELETE /api/reviews/:id`
+- `POST /api/reviews` ✅
+- `PUT /api/reviews/:id` ✅
+- `DELETE /api/reviews/:id` ✅
 
 **Design:**
 ```
@@ -864,29 +822,29 @@ app.put('/api/loans/:id/return', async (req, res) => {
 ```
 
 **Testing:**
-- [ ] Review saves successfully
-- [ ] Rating displays correctly
-- [ ] Cannot review same book twice
-- [ ] Can edit own review
-- [ ] Cannot edit others' reviews
+- [x] Review saves successfully
+- [x] Rating displays correctly
+- [x] Cannot review same book twice
+- [x] Can edit own review
+- [x] Cannot edit others' reviews
+- [x] E2E tests (18 tests covering all scenarios)
 
 ---
 
-### 6.2 Display Reviews on Book Page
-**Files to modify:**
-- `frontend/src/pages/BookDetails.tsx`
-- `frontend/src/components/BookReviews.tsx`
+### 6.2 Display Reviews on Book Page ✅
+**Files created:**
+- `frontend/src/components/BookReviews.tsx` ✅
 
 **Features:**
-- Show all reviews for book
-- Display average rating
-- Show reviewer name and date
-- Sort by: newest, highest rated, lowest rated
-- "Add review" button
-- Edit/delete own review
+- Show all reviews for book ✅
+- Display average rating ✅
+- Show reviewer name and date ✅
+- Sort by: newest, highest rated, lowest rated ✅
+- "Add review" button ✅
+- Edit/delete own review ✅
 
 **API Endpoints (already exist):**
-- `GET /api/reviews?bookId=:id`
+- `GET /api/reviews?bookId=:id` ✅
 
 **Design:**
 ```
@@ -909,57 +867,59 @@ app.put('/api/loans/:id/return', async (req, res) => {
 ```
 
 **Testing:**
-- [ ] Reviews display correctly
-- [ ] Average rating calculated
-- [ ] Sort options work
-- [ ] Can only edit/delete own
-- [ ] Add review opens dialog
+- [x] Reviews display correctly
+- [x] Average rating calculated
+- [x] Sort options work
+- [x] Can only edit/delete own
+- [x] Add review opens dialog
+- [x] E2E tests cover all functionality
 
 ---
 
-### 6.3 Like/Unlike Books
-**Files to create:**
-- `frontend/src/components/LikeButton.tsx`
+### 6.3 Like/Unlike Books ✅
+**Files created:**
+- `frontend/src/components/LikeButton.tsx` ✅
 
 **Features:**
-- Heart icon on book cards and details page
-- Click to like/unlike
-- Show like count
-- Used for recommendations algorithm
+- Heart icon on book cards and details page ✅
+- Click to like/unlike ✅
+- Show like count ✅
+- Used for recommendations algorithm ✅
 
 **API Endpoints (already exist):**
-- `POST /api/likes`
-- `DELETE /api/likes/:id`
-- `GET /api/likes?userId=:id`
+- `POST /api/likes` ✅
+- `DELETE /api/likes/:id` ✅
+- `GET /api/likes?userId=:id` ✅
 
 **Testing:**
-- [ ] Like adds record
-- [ ] Unlike removes record
-- [ ] Count updates immediately
-- [ ] Cannot like twice
-- [ ] Visual feedback on toggle
+- [x] Like adds record
+- [x] Unlike removes record
+- [x] Count updates immediately
+- [x] Cannot like twice
+- [x] Visual feedback on toggle
+- [x] E2E tests (15 tests covering all scenarios)
 
 ---
 
-### 6.4 Recommendations Engine
-**Files to create:**
-- `frontend/src/pages/Recommendations.tsx`
-- `frontend/src/components/RecommendedBookCard.tsx`
+### 6.4 Recommendations Engine ✅
+**Files created:**
+- `frontend/src/pages/Recommendations.tsx` ✅
+- Integrated with `BookCard.tsx` component ✅
 
 **Features:**
-- Algorithm based on:
+- Algorithm based on: ✅
   - Books user liked
   - Books user reviewed (4+ stars)
   - Books user borrowed
   - Preferred genres
   - Age level matches
-- Show "match percentage" or confidence score
-- Explain why recommended ("based on your love of fantasy")
-- Filter by availability
-- Click to view book details
+- Show "match percentage" or confidence score ✅
+- Explain why recommended ("based on your love of fantasy") ✅
+- Filter by availability ✅
+- Click to view book details ✅
 
 **API Endpoints:**
-- `GET /api/recommendations?userId=:id` (need to implement)
+- `GET /api/recommendations?userId=:id` ✅ (implemented)
 
 **New API Implementation:**
 ```javascript
@@ -1018,42 +978,51 @@ function calculateRecommendationScore(book, userProfile) {
 ```
 
 **Testing:**
-- [ ] Recommendations based on user activity
-- [ ] Score calculated correctly
-- [ ] Explanation makes sense
-- [ ] Available filter works
-- [ ] No duplicates of owned books
+- [x] Recommendations based on user activity
+- [x] Score calculated correctly
+- [x] Explanation makes sense
+- [x] Available filter works
+- [x] No duplicates of owned books
+- [x] E2E tests (20 tests covering all scenarios)
 
 ---
 
-## 📸 Phase 7: Bulk Book Upload (OCR)
+## 📸 Phase 7: Bulk Book Upload (AI Vision)
 
-**Priority:** LOW (Nice to have)
-**Estimated Time:** 8-10 hours
+**Priority:** MEDIUM
+**Estimated Time:** 6-8 hours
 **Dependencies:** Phase 3 complete
-**Note:** Complex feature, consider third-party services
+**Status:** Ready for implementation
 
-### 7.1 Image Upload Interface
+### Overview
+Allow users to quickly add multiple books by taking a photo of their bookshelf. The app uses AI vision to detect book titles and authors from the image, then displays them in a compact list for user review before adding to the catalog.
+
+---
+
+### 7.1 Image Capture Interface
 **Files to create:**
 - `frontend/src/pages/BulkUpload.tsx`
-- `frontend/src/components/ImageUploader.tsx`
+- `frontend/src/components/ImageCaptureDialog.tsx`
 
 **Features:**
-- Upload one or multiple images
-- Preview uploaded images
-- Rotate/crop if needed
-- Submit for OCR processing
-- Show progress indicator
+- Two upload options:
+  - **Upload from device** - file picker for existing images
+  - **Use camera** - direct camera capture (mobile-optimized)
+- Image preview before submission
+- Clear/retake option
+- Loading animation during AI processing
+- Progress indicator with status messages
 
 **API Endpoints:**
-- `POST /api/books/bulk-upload` (need to implement)
+- `POST /api/books/detect-from-image` (need to implement)
 
 **Design:**
 ```
 ┌──────────────────────────────┐
-│  העלאת קטלוג מתמונה           │
+│  הוספת ספרים מתמונה           │
 ├──────────────────────────────┤
 │  [📤 בחר תמונה]               │
+│  [📷 צלם]                     │
 │                              │
 │  ┌────────────────┐          │
 │  │                │          │
@@ -1061,88 +1030,310 @@ function calculateRecommendationScore(book, userProfile) {
 │  │                │          │
 │  └────────────────┘          │
 │                              │
-│  [סובב ◄]  [סובב ►]          │
-│  [🗑️ הסר]                    │
+│  [🗑️ הסר]  [✓ זהה ספרים]    │
+└──────────────────────────────┘
+```
+
+**Loading State:**
+```
+┌──────────────────────────────┐
+│  מזהה ספרים...               │
+├──────────────────────────────┤
+│  ⏳ [=========>    ] 60%      │
 │                              │
-│  [העלה וזהה]                 │
+│  מעבד תמונה...               │
+│  זיהוי ספרים...              │
 └──────────────────────────────┘
 ```
 
 ---
 
-### 7.2 OCR Processing
-**Technology Options:**
-1. **Google Cloud Vision API** (paid, very accurate)
-2. **Tesseract.js** (free, open source, Hebrew support)
-3. **Azure Computer Vision** (paid, good accuracy)
-4. **AWS Textract** (paid)
+### 7.2 Backend AI Integration (Gemini 1.5 Flash)
+**Files to create:**
+- `api/services/aiVisionService.js` - Abstract AI service layer
+- `api/services/geminiVision.js` - Gemini implementation
+- `api/routes/bulkUpload.js` - Bulk upload routes
+
+**Architecture - Service Abstraction:**
+```javascript
+// api/services/aiVisionService.js
+// Abstract interface for easy AI provider switching
+
+class AIVisionService {
+  async detectBooksFromImage(imageBuffer) {
+    throw new Error('Must be implemented by subclass')
+  }
+}
+
+export default AIVisionService
+```
+
+```javascript
+// api/services/geminiVision.js
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import AIVisionService from './aiVisionService.js'
+
+class GeminiVisionService extends AIVisionService {
+  constructor() {
+    super()
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  }
+
+  async detectBooksFromImage(imageBuffer) {
+    const prompt = `
+      Analyze this image of a bookshelf and extract all visible book titles and authors.
+      Return the results as a JSON array with the following structure:
+      [
+        { "title": "Book Title", "author": "Author Name" },
+        ...
+      ]
+      
+      Rules:
+      - Only include books where the title is clearly readable
+      - Include author name if visible on the spine/cover
+      - don't include author if not visible
+      - Return valid JSON only, no additional text
+      - Support Hebrew and English titles
+    `
+
+    const imagePart = {
+      inlineData: {
+        data: imageBuffer.toString('base64'),
+        mimeType: 'image/jpeg'
+      }
+    }
+
+    const result = await this.model.generateContent([prompt, imagePart])
+    const response = await result.response
+    const text = response.text()
+    
+    // Parse JSON from response
+    const jsonMatch = text.match(/\[[\s\S]*\]/)
+    if (!jsonMatch) {
+      throw new Error('No valid JSON found in AI response')
+    }
+    
+    return JSON.parse(jsonMatch[0])
+  }
+}
+
+export default GeminiVisionService
+```
+
+**API Implementation:**
+```javascript
+// In api/index.js
+import GeminiVisionService from './services/geminiVision.js'
+import multer from 'multer'
+
+// Keep images in memory (not saved to disk)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+})
+
+const aiVisionService = new GeminiVisionService()
+
+app.post('/api/books/detect-from-image', 
+  authenticateUser,
+  upload.single('image'), 
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No image provided' })
+      }
+
+      // Detect books using AI
+      const detectedBooks = await aiVisionService.detectBooksFromImage(
+        req.file.buffer
+      )
+
+      // Enrich with additional data (optional)
+      // Could search Google Books API for each detected book
+      
+      res.json({ 
+        success: true, 
+        books: detectedBooks,
+        count: detectedBooks.length
+      })
+    } catch (error) {
+      console.error('Image detection error:', error)
+      res.status(500).json({ 
+        error: 'Failed to detect books from image',
+        details: error.message 
+      })
+    }
+  }
+)
+```
+
+**Environment Variables:**
+```bash
+# .env.development.local (local development)
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Vercel Environment Variables (production)
+# Add GEMINI_API_KEY in Vercel dashboard under Settings > Environment Variables
+```
+
+**Dependencies to install:**
+```bash
+cd api
+npm install @google/generative-ai multer
+```
+
+---
+
+### 7.3 Review and Confirm Detected Books
+**Files to create:**
+- `frontend/src/components/DetectedBooksList.tsx`
+- `frontend/src/components/DetectedBookRow.tsx`
+- `frontend/src/components/EditDetectedBookDialog.tsx`
+
+**Features:**
+- Compact list view of detected books
+- Each book row shows:
+  - Checkbox (selected by default)
+  - Book title
+  - Author name
+  - Edit button (opens inline edit form)
+  - Remove button
+- Bulk actions:
+  - Select all / Deselect all
+  - Confirm and add selected books
+- Individual book editing:
+  - Edit title and author
+  - Add additional details (genre, year, etc.)
+  - Save changes inline
+- Success feedback with count of books added
+
+**Design (Compact List):**
+```
+┌──────────────────────────────┐
+│  ספרים שזוהו (12 ספרים)       │
+│  [☑ בחר הכל]  [⬜ בטל הכל]    │
+├──────────────────────────────┤
+│  ☑ הארי פוטר                 │
+│     ג'יי.קיי רולינג           │
+│     [✏️]  [🗑️]                │
+├──────────────────────────────┤
+│  ☑ הוביט                     │
+│     ג.ר.ר. טולקין             │
+│     [✏️]  [🗑️]                │
+├──────────────────────────────┤
+│  ☑ 1984                      │
+│     George Orwell            │
+│     [✏️]  [🗑️]                │
+├──────────────────────────────┤
+│  ⚠️ ספר לא מזוהה             │
+│     לא ידוע                  │
+│     [✏️]  [🗑️]                │
+├──────────────────────────────┤
+│                              │
+│  [הוסף 11 ספרים]  [ביטול]   │
+└──────────────────────────────┘
+```
+
+**Edit Dialog (Inline or Modal):**
+```
+┌──────────────────────────────┐
+│  ערוך פרטי ספר                │
+├──────────────────────────────┤
+│  שם הספר: [הארי פוטר]        │
+│  מחבר: [ג'יי.קיי רולינג]     │
+│                              │
+│  [שמור]  [ביטול]             │
+└──────────────────────────────┘
+```
+
+---
+
+### 7.4 Bulk Add to Catalog
+**API Endpoint:**
+- `POST /api/books/bulk-add` (need to implement)
 
 **Implementation:**
 ```javascript
 // In api/index.js
-app.post('/api/books/bulk-upload', async (req, res) => {
-  const { image } = req.body; // base64 or file upload
-  
-  // 1. Call OCR service
-  const ocrText = await performOCR(image);
-  
-  // 2. Parse book titles from text
-  const bookTitles = extractBookTitles(ocrText);
-  
-  // 3. Search each title online
-  const booksData = await Promise.all(
-    bookTitles.map(title => searchBookOnline(title))
-  );
-  
-  // 4. Return results for user review
-  res.json({ books: booksData });
-});
+app.post('/api/books/bulk-add', authenticateUser, async (req, res) => {
+  try {
+    const { books } = req.body // Array of book objects
+    const familyId = req.user.familyId
+    
+    if (!Array.isArray(books) || books.length === 0) {
+      return res.status(400).json({ error: 'No books provided' })
+    }
+
+    // Validate and add each book
+    const addedBooks = []
+    const errors = []
+    
+    for (const book of books) {
+      try {
+        // Basic validation
+        if (!book.title || !book.author) {
+          errors.push({ book, error: 'Missing title or author' })
+          continue
+        }
+        
+        // Insert book into database
+        const result = await db.books.create({
+          ...book,
+          familyId,
+          status: 'available',
+          addedBy: req.user.id
+        })
+        
+        addedBooks.push(result)
+      } catch (error) {
+        errors.push({ book, error: error.message })
+      }
+    }
+
+    res.json({
+      success: true,
+      added: addedBooks.length,
+      failed: errors.length,
+      books: addedBooks,
+      errors: errors
+    })
+  } catch (error) {
+    console.error('Bulk add error:', error)
+    res.status(500).json({ error: 'Failed to add books' })
+  }
+})
 ```
 
 ---
 
-### 7.3 Review and Confirm
-**Files to create:**
-- `frontend/src/pages/BulkUploadReview.tsx`
-- `frontend/src/components/DetectedBookCard.tsx`
-
-**Features:**
-- Show all detected books
-- Each book has:
-  - Auto-filled data from search
-  - Edit button
-  - Remove button
-  - Include checkbox
-- Select all / deselect all
-- Confirm and add to catalog
-- Show success summary
-
-**Design:**
-```
-┌──────────────────────────────┐
-│  אישור ספרים שזוהו             │
-│  נמצאו 12 ספרים               │
-│  [☑ בחר הכל]  [⬜ בטל הכל]    │
-├──────────────────────────────┤
-│  ☑ 📕 הארי פוטר               │
-│     ג'יי.קיי רולינג           │
-│     [✏️ ערוך]  [🗑️ הסר]       │
-├──────────────────────────────┤
-│  ☑ 📗 הוביט                  │
-│     ג.ר.ר. טולקין             │
-│     [✏️ ערוך]  [🗑️ הסר]       │
-├──────────────────────────────┤
-│  [אשר והוסף 10 ספרים]        │
-│  [ביטול]                     │
-└──────────────────────────────┘
-```
-
-**Testing:**
-- [ ] OCR detects book titles
-- [ ] Online search finds matches
-- [ ] Can edit detected books
+### 7.5 Testing Checklist
+- [ ] Image upload works (file picker)
+- [ ] Camera capture works on mobile
+- [ ] AI detects book titles correctly (Hebrew + English)
+- [ ] Loading animation displays during processing
+- [ ] Detected books list shows all results
+- [ ] Can edit individual book details
 - [ ] Can remove false positives
-- [ ] Bulk add works correctly
+- [ ] Select/deselect all works
+- [ ] Bulk add successfully creates books
+- [ ] Error handling for:
+  - Invalid image format
+  - Image too large (>10MB)
+  - AI service failure
+  - Network timeout
+  - Duplicate books
+- [ ] Environment variable (GEMINI_API_KEY) works locally and on Vercel
+
+---
+
+### 7.6 Future Enhancements
+- Support for other AI providers (OpenAI Vision, Azure Vision)
+- Batch processing multiple images
+- Auto-match with Google Books API for complete metadata
+- Save processing history
+- Confidence score for each detected book
+- Manual correction suggestions
 
 ---
 
@@ -1339,7 +1530,7 @@ CREATE INDEX idx_likes_user ON likes(user_id);
 ---
 
 ### 9.3 Testing Coverage
-**Current Status:** 100 E2E tests implemented with Playwright ✅
+**Current Status:** 153 E2E tests implemented with Playwright ✅
 
 **Tasks:**
 - [x] Install Playwright and configure
@@ -1360,6 +1551,9 @@ CREATE INDEX idx_likes_user ON likes(user_id);
 - [x] Add E2E tests for browser compatibility
 - [x] Add E2E tests for XSS/SQL injection protection
 - [x] Add E2E tests for permission checks
+- [x] Add E2E tests for Reviews and Ratings (Phase 6)
+- [x] Add E2E tests for Likes functionality (Phase 6)
+- [x] Add E2E tests for Recommendations (Phase 6)
 - [ ] Fix failing unit tests (5 tests failing)
 - [ ] Add frontend component tests
 - [ ] Add integration tests
@@ -1395,14 +1589,36 @@ CREATE INDEX idx_likes_user ON likes(user_id);
   
 - ✅ Accessibility (6 tests): 
   - Labels, keyboard, screen readers
-  
-- ✅ Error Handling (23 tests):
   - Network errors (timeout, 500, 404, retries)
   - Invalid data validation
   - Concurrent operations
   - Browser compatibility
   - XSS/SQL injection protection
   - Permission enforcement
+
+- ✅ Reviews and Ratings (18 tests):
+  - Add/view/delete reviews
+  - 1-5 star rating system
+  - Sort options (newest, highest, lowest)
+  - Average rating display
+  - Duplicate prevention
+  - Own review management
+
+- ✅ Likes Functionality (15 tests):
+  - Like/unlike toggle
+  - Like count display
+  - Visual feedback (heart icon)
+  - State persistence
+  - Integration with book cards
+  - Rapid click handling
+
+- ✅ Recommendations (20 tests):
+  - Personalized recommendations
+  - Match percentage display
+  - Recommendation reasons
+  - Availability filtering
+  - Algorithm-based scoring
+  - Empty state handling
 
 **Testing Priorities:**
 1. ✅ Authentication flow with validation
@@ -1411,9 +1627,11 @@ CREATE INDEX idx_likes_user ON likes(user_id);
 4. ✅ Family management
 5. ✅ Error handling and security
 6. ✅ Responsive and accessible design
-7. Loan workflow (pending Phase 5)
-8. Search functionality (pending Phase 4)
-9. Reviews and likes (pending Phase 6)
+7. ✅ Reviews and Ratings (Phase 6)
+8. ✅ Likes functionality (Phase 6)
+9. ✅ Recommendations (Phase 6)
+10. Loan workflow (pending Phase 5)
+11. Search functionality (pending Phase 4)
 
 ---
 
@@ -1531,7 +1749,7 @@ git push origin feature/book-catalog
 
 ## 📊 Progress Tracking
 
-**Overall Progress:** ~50% Complete
+**Overall Progress:** ~60% Complete
 
 | Phase | Status | Progress | Est. Time | Actual Time |
 |-------|--------|----------|-----------|-------------|
@@ -1541,15 +1759,15 @@ git push origin feature/book-catalog
 | 3. Books Management | ✅ Complete | 100% | 6-8h | ~4h |
 | 4. Community Search | ⏳ Planned | 0% | 4-5h | - |
 | 5. Loans Management | ⏳ Planned | 0% | 5-6h | - |
-| 6. Reviews & Recs | ⏳ Planned | 0% | 4-5h | - |
-| 7. OCR Upload | ⏳ Planned | 0% | 8-10h | - |
+| 6. Reviews & Recs | ✅ Complete | 100% | 4-5h | ~5h |
+| 7. AI Bulk Upload | ⏳ Documented | 0% | 6-8h | - |
 | 8. UI/UX | ⏳ Planned | 0% | 3-4h | - |
 | 9. Security | ⏳ Planned | 0% | 2-3h | - |
 | 10. Deployment | ⏳ Planned | 0% | 2-3h | - |
 
 **Total Estimated:** 40-50 hours
-**Completed:** ~19 hours
-**Remaining:** ~28 hours
+**Completed:** ~24 hours
+**Remaining:** ~23 hours
 
 ---
 
@@ -1577,9 +1795,9 @@ When implementing each phase, refer back to:
 2. This implementation guide for technical details
 3. `COPILOT_INSTRUCTIONS.md` for architecture patterns
 
-**Current Status:** Ready to fix RLS policy and continue Phase 1
+**Current Status:** Phase 6 (Reviews & Recommendations) Complete with E2E Tests
 
-**Next Action:** Apply database migration 003_add_users_insert_policy.sql
+**Next Action:** Apply database migration 004_add_rating_to_reviews.sql or continue with Phase 4/5
 
 ---
 

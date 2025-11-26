@@ -14,6 +14,7 @@ import {
   SwapHoriz as BorrowedIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import LikeButton from './LikeButton';
 
 interface Book {
   id: string;
@@ -148,6 +149,17 @@ export default function BookCard({ book }: BookCardProps) {
           </Box>
         </CardContent>
       </CardActionArea>
+      <Box
+        sx={{
+          px: 2,
+          pb: 1,
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <LikeButton bookId={book.id} size="small" showCount={true} />
+      </Box>
     </Card>
   );
 }

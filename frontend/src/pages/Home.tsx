@@ -103,7 +103,7 @@ export default function Home() {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+    <Container maxWidth="lg" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 } }}>
       {/* Search Section - Main Focus */}
       <Box mb={6}>
         <Typography variant="h4" component="h1" gutterBottom textAlign="center">

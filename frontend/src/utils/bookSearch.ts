@@ -11,10 +11,10 @@ export interface BookSearchResult {
   title: string;
   author: string;
   isbn: string;
-  year_published: number;
+  publish_year: number;
   publisher: string;
   pages: number;
-  summary: string;
+  description: string;
   cover_image_url: string;
   source: string;
   categories?: string[]; // Google Books categories for genre deduction
@@ -79,10 +79,10 @@ class IsraelNationalLibrarySource implements BookSearchSource {
               title,
               author: creator,
               isbn: identifier, // Use identifier as fallback for ISBN
-              year_published: date ? parseInt(date.substring(0, 4)) : 0, // Extract year from YYYYMMDD format
+              publish_year: date ? parseInt(date.substring(0, 4)) : 0, // Extract year from YYYYMMDD format
               publisher: publisher,
               pages: 0,
-              summary: description,
+              description: description,
               cover_image_url: thumbnail,
               source: this.displayName,
             });
@@ -140,10 +140,10 @@ class GoogleBooksSource implements BookSearchSource {
             title: volumeInfo.title || '',
             author: Array.isArray(volumeInfo.authors) ? volumeInfo.authors.join(', ') : '',
             isbn,
-            year_published: volumeInfo.publishedDate ? parseInt(volumeInfo.publishedDate.toString()) : 0,
+            publish_year: volumeInfo.publishedDate ? parseInt(volumeInfo.publishedDate.toString()) : 0,
             publisher: volumeInfo.publisher || '',
             pages: volumeInfo.pageCount || 0,
-            summary: volumeInfo.description || '',
+            description: volumeInfo.description || '',
             cover_image_url: volumeInfo.imageLinks?.thumbnail || volumeInfo.imageLinks?.smallThumbnail || '',
             source: this.displayName,
             categories,
@@ -189,10 +189,10 @@ class OpenLibrarySource implements BookSearchSource {
             title: doc.title || '',
             author: Array.isArray(doc.author_name) ? doc.author_name.join(', ') : '',
             isbn: Array.isArray(doc.isbn) ? doc.isbn[0] : '',
-            year_published: doc.first_publish_year || 0,
+            publish_year: doc.first_publish_year || 0,
             publisher: Array.isArray(doc.publisher) ? doc.publisher[0] : '',
             pages: doc.number_of_pages_median || 0,
-            summary: '',
+            description: '',
             cover_image_url: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : '',
             source: this.displayName,
           });

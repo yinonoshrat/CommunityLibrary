@@ -32,14 +32,14 @@ export default function Navbar({ user }: NavbarProps) {
   }
 
   return (
-    <AppBar position="static">
-      <Toolbar>
+    <AppBar position="static" sx={{ width: '100%', left: 0, right: 0, m: 0 }}>
+      <Toolbar sx={{ px: { xs: 0, sm: 3 }, minHeight: { xs: 56, sm: 64 } }}>
         {showBackButton && (
           <IconButton
             edge="start"
             color="inherit"
             onClick={() => navigate(-1)}
-            sx={{ mr: 2 }}
+            sx={{ ml: { xs: 0.5, sm: 0 }, mr: { xs: 0.5, sm: 2 } }}
           >
             <ArrowBack />
           </IconButton>
@@ -83,11 +83,17 @@ export default function Navbar({ user }: NavbarProps) {
               <MenuItem onClick={() => { navigate('/books'); handleClose(); }}>
                 הספרים שלי
               </MenuItem>
+              <MenuItem onClick={() => { navigate('/books/add'); handleClose(); }}>
+                הוסף ספר
+              </MenuItem>
               <MenuItem onClick={() => { navigate('/search'); handleClose(); }}>
                 חיפוש ספרים
               </MenuItem>
               <MenuItem onClick={() => { navigate('/loans'); handleClose(); }}>
                 השאלות
+              </MenuItem>
+              <MenuItem onClick={() => { navigate('/recommendations'); handleClose(); }}>
+                המלצות
               </MenuItem>
               <MenuItem onClick={handleLogout}>
                 התנתק

@@ -33,6 +33,32 @@ export const theme = createTheme(
         styleOverrides: {
           body: {
             direction: 'rtl',
+            margin: 0,
+            padding: 0,
+          },
+          '#root': {
+            minHeight: '100vh',
+            margin: 0,
+            padding: 0,
+          },
+          html: {
+            margin: 0,
+            padding: 0,
+          },
+          '*': {
+            boxSizing: 'border-box',
+          },
+        },
+      },
+      MuiContainer: {
+        styleOverrides: {
+          root: {
+            paddingLeft: '8px !important',
+            paddingRight: '8px !important',
+            '@media (min-width: 600px)': {
+              paddingLeft: '24px !important',
+              paddingRight: '24px !important',
+            },
           },
         },
       },

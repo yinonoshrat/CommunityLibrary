@@ -16,10 +16,22 @@ import {
   CardActionArea,
   InputAdornment,
   Divider,
+  ToggleButtonGroup,
+  ToggleButton,
+  LinearProgress,
+  Stack,
+  IconButton,
+  Checkbox,
+  Chip,
 } from '@mui/material';
 import {
   Save as SaveIcon,
   Search as SearchIcon,
+  CloudUpload as UploadIcon,
+  CameraAlt as CameraIcon,
+  Delete as DeleteIcon,
+  CheckCircle as CheckIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -33,12 +45,12 @@ interface BookFormData {
   series: string;
   series_number: string;
   isbn: string;
-  year_published: string;
+  publish_year: string;
   publisher: string;
   genre: string;
-  age_level: string;
+  age_range: string;
   pages: string;
-  summary: string;
+  description: string;
   cover_image_url: string;
 }
 
@@ -68,6 +80,27 @@ const AGE_LEVELS = [
   'כל הגילאים',
 ];
 
+interface DetectedBook {
+  title: string;
+  author: string;
+  publisher?: string;
+  publish_year?: number;
+  pages?: number;
+  description?: string;
+  cover_image_url?: string;
+  isbn?: string;
+  genre?: string;
+  age_range?: string;
+  language?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  confidenceScore?: number;
+  selected?: boolean;
+  tempId?: string;
+  expanded?: boolean;
+  series?: string;
+  series_number?: number;
+}
+
 export default function AddBook() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -76,6 +109,18 @@ export default function AddBook() {
   const [success, setSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('הספר נוסף בהצלחה! מעביר לדף הספרים...');
   const [familyId, setFamilyId] = useState<string | null>(null);
+  
+  // Toggle between single and bulk upload
+  const [uploadMode, setUploadMode] = useState<'single' | 'bulk'>('single');
+  
+  // Bulk upload state
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const [detecting, setDetecting] = useState(false);
+  const [detectedBooks, setDetectedBooks] = useState<DetectedBook[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [progress, setProgress] = useState(0);
+  
   // Book search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -91,12 +136,12 @@ export default function AddBook() {
     series: '',
     series_number: '',
     isbn: '',
-    year_published: '',
+    publish_year: '',
     publisher: '',
     genre: '',
-    age_level: '',
+    age_range: '',
     pages: '',
-    summary: '',
+    description: '',
     cover_image_url: '',
   });
 
@@ -175,10 +220,10 @@ export default function AddBook() {
       title: book.title,
       author: book.author,
       isbn: book.isbn,
-      year_published: book.year_published ? book.year_published.toString() : '',
+      publish_year: book.publish_year ? book.publish_year.toString() : '',
       publisher: book.publisher,
       pages: book.pages ? book.pages.toString() : '',
-      summary: book.summary,
+      description: book.description,
       cover_image_url: book.cover_image_url,
       genre: deducedGenre || formData.genre, // Use deduced genre or keep current
     });
@@ -240,12 +285,12 @@ export default function AddBook() {
         series: formData.series.trim() || null,
         series_number: formData.series_number ? parseInt(formData.series_number) : null,
         isbn: formData.isbn.trim() || null,
-        year_published: formData.year_published ? parseInt(formData.year_published) : null,
+        publish_year: formData.publish_year ? parseInt(formData.publish_year) : null,
         publisher: formData.publisher.trim() || null,
         genre: formData.genre,
-        age_level: formData.age_level || null,
+        age_range: formData.age_range || null,
         pages: formData.pages ? parseInt(formData.pages) : null,
-        summary: formData.summary.trim() || null,
+        description: formData.description.trim() || null,
         cover_image_url: formData.cover_image_url.trim() || null,
         family_id: familyId,
         status: 'available',
@@ -286,6 +331,169 @@ export default function AddBook() {
     }
   };
 
+  // Bulk upload handlers
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('נא לבחור קובץ תמונה בלבד');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('גודל הקובץ חורג מ-10MB');
+      return;
+    }
+
+    setSelectedImage(file);
+    setError(null);
+    setSuccess(false);
+    setDetectedBooks([]);
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    setImagePreview('');
+    setDetectedBooks([]);
+    setError(null);
+    setSuccess(false);
+  };
+
+  const handleDetectBooks = async () => {
+    if (!selectedImage) return;
+
+    try {
+      setDetecting(true);
+      setError(null);
+      setProgress(20);
+
+      const formData = new FormData();
+      formData.append('image', selectedImage);
+
+      setProgress(40);
+
+      const data = await apiCall('/api/books/detect-from-image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      setProgress(100);
+
+      if (data.books && data.books.length > 0) {
+        const booksWithSelection = data.books.map((book: DetectedBook, index: number) => ({
+          ...book,
+          selected: book.confidence !== 'low', // Auto-select high and medium confidence books
+          tempId: `temp-${Date.now()}-${index}`,
+          expanded: false,
+        }));
+        setDetectedBooks(booksWithSelection);
+        
+        const highCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'high').length;
+        const mediumCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'medium').length;
+        const lowCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'low').length;
+        
+        setSuccessMessage(
+          `זוהו ${data.count} ספרים בתמונה! ` +
+          `${highCount} בדיוק גבוה, ${mediumCount} בדיוק בינוני, ${lowCount} בדיוק נמוך`
+        );
+        setSuccess(true);
+      } else {
+        setError('לא זוהו ספרים בתמונה. נסה תמונה אחרת או הוסף ספרים ידנית.');
+      }
+    } catch (err: any) {
+      console.error('Detection error:', err);
+      setError(err.message || 'שגיאה בזיהוי ספרים מהתמונה');
+    } finally {
+      setDetecting(false);
+      setProgress(0);
+    }
+  };
+
+  const handleToggleBook = (tempId: string) => {
+    setDetectedBooks(prevBooks =>
+      prevBooks.map(book =>
+        book.tempId === tempId ? { ...book, selected: !book.selected } : book
+      )
+    );
+  };
+
+  const handleToggleExpanded = (tempId: string) => {
+    setDetectedBooks(prevBooks =>
+      prevBooks.map(book =>
+        book.tempId === tempId ? { ...book, expanded: !book.expanded } : book
+      )
+    );
+  };
+
+  const handleEditBook = (tempId: string, field: keyof DetectedBook, value: any) => {
+    setDetectedBooks(prevBooks =>
+      prevBooks.map(book =>
+        book.tempId === tempId ? { ...book, [field]: value } : book
+      )
+    );
+  };
+
+  const handleRemoveBook = (tempId: string) => {
+    setDetectedBooks(prevBooks => prevBooks.filter(book => book.tempId !== tempId));
+  };
+
+  const handleSelectAll = () => {
+    setDetectedBooks(prevBooks => prevBooks.map(book => ({ ...book, selected: true })));
+  };
+
+  const handleDeselectAll = () => {
+    setDetectedBooks(prevBooks => prevBooks.map(book => ({ ...book, selected: false })));
+  };
+
+  const handleBulkAdd = async () => {
+    const selectedBooks = detectedBooks.filter(book => book.selected);
+
+    if (selectedBooks.length === 0) {
+      setError('נא לבחור לפחות ספר אחד להוספה');
+      return;
+    }
+
+    try {
+      setAdding(true);
+      setError(null);
+
+      const data = await apiCall('/api/books/bulk-add', {
+        method: 'POST',
+        body: JSON.stringify({ books: selectedBooks }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+        },
+      });
+
+      if (data.added > 0) {
+        setSuccessMessage(`נוספו בהצלחה ${data.added} ספרים לקטלוג!`);
+        setSuccess(true);
+        setTimeout(() => {
+          navigate('/books');
+        }, 2000);
+      } else {
+        setError('לא נוספו ספרים. בדוק את השגיאות.');
+      }
+
+      if (data.errors && data.errors.length > 0) {
+        console.error('Bulk add errors:', data.errors);
+      }
+    } catch (err: any) {
+      console.error('Bulk add error:', err);
+      setError(err.message || 'שגיאה בהוספת ספרים');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box mb={4}>
@@ -293,8 +501,33 @@ export default function AddBook() {
           הוסף ספר חדש
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          הזן את פרטי הספר שברצונך להוסיף לקטלוג המשפחתי
+          בחר את שיטת ההוספה המועדפת עליך
         </Typography>
+      </Box>
+
+      {/* Upload Mode Toggle */}
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
+        <ToggleButtonGroup
+          value={uploadMode}
+          exclusive
+          onChange={(_, newMode) => {
+            if (newMode !== null) {
+              setUploadMode(newMode);
+              setError(null);
+              setSuccess(false);
+            }
+          }}
+          aria-label="upload mode"
+        >
+          <ToggleButton value="single" aria-label="single book">
+            <EditIcon sx={{ mr: 1 }} />
+            ספר בודד
+          </ToggleButton>
+          <ToggleButton value="bulk" aria-label="bulk upload">
+            <CameraIcon sx={{ mr: 1 }} />
+            הוספה מרובה (AI)
+          </ToggleButton>
+        </ToggleButtonGroup>
       </Box>
 
       {error && (
@@ -309,8 +542,353 @@ export default function AddBook() {
         </Alert>
       )}
 
-      {/* Book Search Section */}
-      <Paper sx={{ p: 3, mb: 3 }}>
+      {/* Bulk Upload Mode */}
+      {uploadMode === 'bulk' && (
+        <>
+          <Box mb={2}>
+            <Typography variant="body2" color="text.secondary">
+              צלם או העלה תמונה של מדף הספרים שלך, ואנחנו נזהה את הספרים באמצעות בינה מלאכותית
+            </Typography>
+          </Box>
+
+          {/* Image Upload Section */}
+          {!selectedImage && (
+            <Paper sx={{ p: 4, textAlign: 'center', mb: 3 }}>
+              <Stack spacing={2} alignItems="center">
+                <input
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  id="upload-image"
+                  type="file"
+                  onChange={handleImageSelect}
+                />
+                <label htmlFor="upload-image">
+                  <Button
+                    variant="contained"
+                    component="span"
+                    startIcon={<UploadIcon />}
+                    size="large"
+                  >
+                    בחר תמונה
+                  </Button>
+                </label>
+
+                <input
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  id="capture-image"
+                  type="file"
+                  capture="environment"
+                  onChange={handleImageSelect}
+                />
+                <label htmlFor="capture-image">
+                  <Button
+                    variant="outlined"
+                    component="span"
+                    startIcon={<CameraIcon />}
+                    size="large"
+                  >
+                    צלם תמונה
+                  </Button>
+                </label>
+
+                <Typography variant="body2" color="text.secondary">
+                  גודל מקסימלי: 10MB
+                </Typography>
+              </Stack>
+            </Paper>
+          )}
+
+          {/* Image Preview and Detection */}
+          {selectedImage && !detectedBooks.length && (
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Box sx={{ position: 'relative', mb: 2 }}>
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  style={{
+                    width: '100%',
+                    maxHeight: '400px',
+                    objectFit: 'contain',
+                    borderRadius: '8px',
+                  }}
+                />
+                <IconButton
+                  sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'background.paper' }}
+                  onClick={handleRemoveImage}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Box>
+
+              {detecting && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    מזהה ספרים...
+                  </Typography>
+                  <LinearProgress variant="determinate" value={progress} />
+                </Box>
+              )}
+
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={handleDetectBooks}
+                disabled={detecting}
+                startIcon={detecting ? <CircularProgress size={20} /> : <CheckIcon />}
+                sx={{ py: 1.5 }}
+              >
+                {detecting ? 'מזהה...' : 'זהה ספרים'}
+              </Button>
+            </Paper>
+          )}
+
+          {/* Detected Books List */}
+          {detectedBooks.length > 0 && (
+            <Paper sx={{ p: 3 }}>
+              <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6">
+                  ספרים שזוהו ({detectedBooks.filter(b => b.selected).length}/{detectedBooks.length})
+                </Typography>
+                <Box>
+                  <Button size="small" onClick={handleSelectAll} sx={{ mr: 1 }}>
+                    בחר הכל
+                  </Button>
+                  <Button size="small" onClick={handleDeselectAll}>
+                    בטל הכל
+                  </Button>
+                </Box>
+              </Box>
+
+              <Stack spacing={2} sx={{ mb: 3 }}>
+                {detectedBooks.map((book) => (
+                  <Paper
+                    key={book.tempId}
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      opacity: book.selected ? 1 : 0.5,
+                      border: book.selected ? 2 : 1,
+                      borderColor: book.selected ? 'primary.main' : 'divider',
+                      bgcolor: book.confidence === 'high' ? 'success.50' : book.confidence === 'medium' ? 'warning.50' : 'grey.50',
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                      <Checkbox
+                        checked={book.selected}
+                        onChange={() => handleToggleBook(book.tempId!)}
+                        sx={{ mt: 0.5 }}
+                      />
+                      <Box sx={{ flexGrow: 1 }}>
+                        {/* Header with title, author, and confidence badge */}
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+                          <Box
+                            sx={{
+                              px: 1,
+                              py: 0.5,
+                              borderRadius: 1,
+                              bgcolor: book.confidence === 'high' ? 'success.main' : book.confidence === 'medium' ? 'warning.main' : 'grey.500',
+                              color: 'white',
+                              fontSize: '0.75rem',
+                              fontWeight: 'bold',
+                            }}
+                          >
+                            {book.confidence === 'high' ? 'דיוק גבוה' : book.confidence === 'medium' ? 'דיוק בינוני' : 'דיוק נמוך'}
+                          </Box>
+                          {book.cover_image_url && (
+                            <img
+                              src={book.cover_image_url}
+                              alt={book.title}
+                              style={{ width: 30, height: 45, objectFit: 'cover', borderRadius: 4 }}
+                            />
+                          )}
+                        </Box>
+
+                        <TextField
+                          fullWidth
+                          value={book.title}
+                          onChange={(e) => handleEditBook(book.tempId!, 'title', e.target.value)}
+                          variant="outlined"
+                          size="small"
+                          sx={{ mb: 1 }}
+                          label="שם הספר"
+                        />
+                        <TextField
+                          fullWidth
+                          value={book.author || ''}
+                          onChange={(e) => handleEditBook(book.tempId!, 'author', e.target.value)}
+                          placeholder="מחבר (אופציונלי)"
+                          variant="outlined"
+                          size="small"
+                          label="מחבר"
+                        />
+
+                        {/* Expandable details section */}
+                        {book.expanded && (
+                          <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                            <Grid container spacing={2}>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  label="סדרה"
+                                  value={book.series || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'series', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  type="number"
+                                  label="מספר כרך"
+                                  value={book.series_number || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'series_number', parseInt(e.target.value) || '')}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  label="ISBN"
+                                  value={book.isbn || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'isbn', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  type="number"
+                                  label="שנת פרסום"
+                                  value={book.publish_year || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'publish_year', parseInt(e.target.value) || '')}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  label="הוצאה לאור"
+                                  value={book.publisher || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'publisher', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  type="number"
+                                  label="מספר עמודים"
+                                  value={book.pages || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'pages', parseInt(e.target.value) || '')}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  select
+                                  label="ז'אנר"
+                                  value={book.genre || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'genre', e.target.value)}
+                                >
+                                  {GENRES.map((genre) => (
+                                    <MenuItem key={genre} value={genre}>
+                                      {genre}
+                                    </MenuItem>
+                                  ))}
+                                </TextField>
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  select
+                                  label="גיל מומלץ"
+                                  value={book.age_range || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'age_range', e.target.value)}
+                                >
+                                  {AGE_LEVELS.map((level) => (
+                                    <MenuItem key={level} value={level}>
+                                      {level}
+                                    </MenuItem>
+                                  ))}
+                                </TextField>
+                              </Grid>
+                              <Grid size={{ xs: 12 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  label="קישור לתמונת השער"
+                                  value={book.cover_image_url || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'cover_image_url', e.target.value)}
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  multiline
+                                  rows={3}
+                                  label="תקציר"
+                                  value={book.description || ''}
+                                  onChange={(e) => handleEditBook(book.tempId!, 'description', e.target.value)}
+                                />
+                              </Grid>
+                            </Grid>
+                          </Box>
+                        )}
+
+                        {/* Expand/Collapse button */}
+                        <Button
+                          size="small"
+                          onClick={() => handleToggleExpanded(book.tempId!)}
+                          sx={{ mt: 1 }}
+                          startIcon={<EditIcon />}
+                        >
+                          {book.expanded ? 'הסתר פרטים' : 'ערוך פרטים נוספים'}
+                        </Button>
+                      </Box>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleRemoveBook(book.tempId!)}
+                        color="error"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Box>
+                  </Paper>
+                ))}
+              </Stack>
+
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={handleBulkAdd}
+                  disabled={adding || detectedBooks.filter(b => b.selected).length === 0}
+                  startIcon={adding ? <CircularProgress size={20} /> : <CheckIcon />}
+                  sx={{ py: 1.5 }}
+                >
+                  {adding
+                    ? 'מוסיף...'
+                    : `הוסף ${detectedBooks.filter(b => b.selected).length} ספרים`}
+                </Button>
+                <Button variant="outlined" onClick={handleRemoveImage} sx={{ py: 1.5 }}>
+                  ביטול
+                </Button>
+              </Box>
+            </Paper>
+          )}
+        </>
+      )}
+
+      {/* Single Book Mode */}
+      {uploadMode === 'single' && (
+        <>
+          {/* Book Search Section */}
+          <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           חפש ספר במאגרים
         </Typography>
@@ -372,9 +950,9 @@ export default function AddBook() {
                         <Typography variant="body2" color="text.secondary" noWrap>
                           {book.author}
                         </Typography>
-                        {book.year_published > 0 && (
+                        {book.publish_year && book.publish_year > 0 && (
                           <Typography variant="caption" color="text.secondary">
-                            {book.year_published}
+                            {book.publish_year}
                           </Typography>
                         )}
                         <Typography variant="caption" display="block" sx={{ mt: 1 }}>
@@ -470,8 +1048,8 @@ export default function AddBook() {
                 fullWidth
                 label="שנת פרסום"
                 type="number"
-                value={formData.year_published}
-                onChange={handleChange('year_published')}
+                value={formData.publish_year}
+                onChange={handleChange('publish_year')}
                 disabled={loading || success}
                 inputProps={{ min: 1000, max: new Date().getFullYear() }}
               />
@@ -528,8 +1106,8 @@ export default function AddBook() {
                 fullWidth
                 select
                 label="גיל מומלץ"
-                value={formData.age_level}
-                onChange={handleChange('age_level')}
+                value={formData.age_range}
+                onChange={handleChange('age_range')}
                 disabled={loading || success}
               >
                 {AGE_LEVELS.map((level) => (
@@ -559,8 +1137,8 @@ export default function AddBook() {
                 multiline
                 rows={4}
                 label="תקציר"
-                value={formData.summary}
-                onChange={handleChange('summary')}
+                value={formData.description}
+                onChange={handleChange('description')}
                 disabled={loading || success}
                 placeholder="תקציר קצר של הספר..."
               />
@@ -590,6 +1168,8 @@ export default function AddBook() {
           </Grid>
         </Box>
       </Paper>
+        </>
+      )}
     </Container>
   );
 }
