@@ -887,21 +887,12 @@ app.post('/api/books/bulk-add', async (req, res) => {
           description: book.description || null,
           cover_image_url: book.cover_image_url || null,
           isbn: book.isbn || null,
-          series: book.series || null
+          series: book.series || null,
+          series_number: book.series_number || null
         };
 
-        // Insert book into database
-        const { data, error } = await supabase
-          .from('books')
-          .insert(bookData)
-          .select()
-          .single();
-
-        if (error) {
-          console.error('Failed to insert book:', error);
-          errors.push({ book, error: error.message });
-          continue;
-        }
+        // Insert book using adapter (handles deduplication in catalog)
+        const data = await db.books.create(bookData);
 
         addedBooks.push(data);
         

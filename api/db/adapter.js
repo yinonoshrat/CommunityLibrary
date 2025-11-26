@@ -7,7 +7,23 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+// Configure fetch to handle self-signed certificates in development
+const customFetch = (url, options = {}) => {
+  // In Node.js, bypass SSL certificate validation for development
+  if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  }
+  return fetch(url, options);
+};
+
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false
+  },
+  global: {
+    fetch: customFetch
+  }
+})
 
 // Database adapter following the pattern from copilot-instructions.md
 export const db = {
@@ -194,11 +210,11 @@ export const db = {
           author_hebrew: book.author_hebrew,
           isbn: book.isbn,
           publisher: book.publisher,
-          year_published: book.publish_year,
+          publish_year: book.publish_year,
           genre: book.genre,
-          age_level: book.age_range,
+          age_range: book.age_range,
           pages: book.pages,
-          summary: book.description,
+          description: book.description,
           cover_image_url: book.cover_image_url,
           series: book.series,
           series_number: book.series_number
@@ -257,11 +273,11 @@ export const db = {
         author_hebrew: updates.author_hebrew,
         isbn: updates.isbn,
         publisher: updates.publisher,
-        year_published: updates.publish_year,
+        publish_year: updates.publish_year,
         genre: updates.genre,
-        age_level: updates.age_range,
+        age_range: updates.age_range,
         pages: updates.pages,
-        summary: updates.description,
+        description: updates.description,
         cover_image_url: updates.cover_image_url,
         series: updates.series,
         series_number: updates.series_number

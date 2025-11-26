@@ -464,12 +464,19 @@ export default function AddBook() {
       setAdding(true);
       setError(null);
 
+      // Check if user is authenticated
+      if (!user || !user.id) {
+        setError('אנא התחבר כדי להוסיף ספרים');
+        setAdding(false);
+        return;
+      }
+
       const data = await apiCall('/api/books/bulk-add', {
         method: 'POST',
         body: JSON.stringify({ books: selectedBooks }),
         headers: {
           'Content-Type': 'application/json',
-          'x-user-id': user?.id || '',
+          'x-user-id': user.id,
         },
       });
 

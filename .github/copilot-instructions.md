@@ -167,3 +167,52 @@ To allow easy database switching in the future:
 2. Install database client: `cd api && npm install @supabase/supabase-js` (or `pg` for raw Postgres)
 3. Create adapter in `api/db/adapter.js`
 4. Use adapter in API routes
+
+## UI/UX Implementation Guidelines
+
+### Progress Indication
+When implementing features with multi-step processes (like bulk upload with AI), always provide clear progress feedback:
+
+**Example: Bulk Book Upload with AI**
+```typescript
+// State management
+const [progress, setProgress] = useState(0);
+const [currentStep, setCurrentStep] = useState('');
+
+// Multi-step process
+async function processBooks() {
+  setCurrentStep('Detecting books from image...');
+  setProgress(25);
+  const detected = await aiVisionService.detect(image);
+  
+  setCurrentStep('Searching online databases...');
+  setProgress(50);
+  const enriched = await Promise.all(detected.map(searchOnline));
+  
+  setCurrentStep('Adding books to catalog...');
+  setProgress(75);
+  await bulkAdd(enriched);
+  
+  setProgress(100);
+  setCurrentStep('Complete!');
+}
+```
+
+**UI Components for Progress:**
+- Use `LinearProgress` or `CircularProgress` from Material-UI
+- Show percentage completion when deterministic
+- Display current step description
+- Provide visual feedback for each phase:
+  - Image processing
+  - AI detection
+  - Online search/enrichment
+  - Database insertion
+- Handle errors gracefully with clear messages
+- Allow cancellation for long-running operations
+
+**Best Practices:**
+- Update progress at meaningful milestones, not too frequently
+- Show spinner for indeterminate operations
+- Disable submit buttons during processing
+- Clear error state when retrying
+- Celebrate success with clear completion message
