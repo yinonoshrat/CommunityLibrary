@@ -338,7 +338,12 @@ app.get('/api/families/:id/members', async (req, res) => {
 
 app.get('/api/users', async (req, res) => {
   try {
-    const users = await db.users.getAll();
+    const { familyId, noFamily } = req.query;
+    const users = familyId 
+      ? await db.users.getAll({ familyId })
+      : noFamily
+      ? await db.users.getAll({ noFamily: true })
+      : await db.users.getAll();
     res.json({ users });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -358,6 +363,15 @@ app.put('/api/users/:id', async (req, res) => {
   try {
     const user = await db.users.update(req.params.id, req.body);
     res.json({ user });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    await db.users.delete(req.params.id);
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

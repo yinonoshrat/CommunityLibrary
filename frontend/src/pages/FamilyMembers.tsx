@@ -16,6 +16,10 @@ import {
   IconButton,
   Chip,
   Stack,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import {
   Add,
@@ -44,6 +48,11 @@ export default function FamilyMembers() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
+  const [openAddDialog, setOpenAddDialog] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<FamilyMember[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userFamilyId, setUserFamilyId] = useState<string | null>(null);
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [formData, setFormData] = useState({
     full_name: '',
@@ -71,6 +80,7 @@ export default function FamilyMembers() {
         }
 
         setIsAdmin(userProfile.is_family_admin);
+        setUserFamilyId(userProfile.family_id);
 
         if (!userProfile.is_family_admin) {
           setError('רק מנהל משפחה יכול לצפות בדף זה');
@@ -94,6 +104,43 @@ export default function FamilyMembers() {
     fetchMembers();
   }, [user]);
 
+  const loadAvailableUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const response = await apiCall<{ users: FamilyMember[] }>('/api/users?noFamily=true');
+      setAvailableUsers(response.users || []);
+    } catch (err: any) {
+      console.error('Failed to load available users:', err);
+      alert('שגיאה בטעינת רשימת המשתמשים');
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleOpenAddDialog = () => {
+    loadAvailableUsers();
+    setOpenAddDialog(true);
+  };
+
+  const handleAddMember = async () => {
+    if (!selectedUserId || !userFamilyId) return;
+
+    try {
+      const response = await apiCall<{ user: FamilyMember }>(
+        `/api/users/${selectedUserId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ family_id: userFamilyId }),
+        }
+      );
+      setMembers([...members, response.user]);
+      setOpenAddDialog(false);
+      setSelectedUserId('');
+    } catch (err: any) {
+      alert(err.message || 'שגיאה בהוספת חבר למשפחה');
+    }
+  };
+
   const handleEdit = (member: FamilyMember) => {
     setEditingMember(member);
     setFormData({
@@ -106,21 +153,23 @@ export default function FamilyMembers() {
 
   const handleDelete = async (memberId: string) => {
     if (memberId === user?.id) {
-      alert('לא ניתן למחוק את עצמך');
+      alert('לא ניתן להסיר את עצמך מהמשפחה');
       return;
     }
 
-    if (!confirm('האם אתה בטוח שברצונך למחוק חבר משפחה זה?')) {
+    if (!confirm('האם אתה בטוח שברצונך להסיר חבר משפחה זה? הוא יוכל להצטרף למשפחה אחרת.')) {
       return;
     }
 
     try {
+      // Remove user from family by setting family_id to null
       await apiCall(`/api/users/${memberId}`, {
-        method: 'DELETE',
+        method: 'PUT',
+        body: JSON.stringify({ family_id: null }),
       });
       setMembers(members.filter((m) => m.id !== memberId));
     } catch (err: any) {
-      alert(err.message || 'שגיאה במחיקת חבר המשפחה');
+      alert(err.message || 'שגיאה בהסרת חבר המשפחה');
     }
   };
 
@@ -167,14 +216,7 @@ export default function FamilyMembers() {
   return (
     <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
       <Box mb={4} display="flex" alignItems="center" justifyContent="space-between">
-        <Box>
-          <Button
-            startIcon={<ArrowBack />}
-            onClick={() => navigate('/family')}
-            sx={{ mb: 1 }}
-          >
-            חזרה
-          </Button>
+        <Box>          
           <Typography variant="h4" component="h1">
             חברי המשפחה
           </Typography>
@@ -182,7 +224,7 @@ export default function FamilyMembers() {
         <Button
           variant="contained"
           startIcon={<Add />}
-          onClick={() => alert('הוספת חבר משפחה תתאפשר בקרוב')}
+          onClick={() => setOpenAddDialog(true)}
         >
           הוסף חבר משפחה
         </Button>
@@ -267,6 +309,49 @@ export default function FamilyMembers() {
           <Button onClick={() => setOpenDialog(false)}>ביטול</Button>
           <Button onClick={handleSave} variant="contained">
             שמור
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Member Dialog */}
+      <Dialog open={openAddDialog} onClose={() => setOpenAddDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>הוסף חבר משפחה</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            {loadingUsers ? (
+              <Box display="flex" justifyContent="center" py={3}>
+                <CircularProgress />
+              </Box>
+            ) : availableUsers.length === 0 ? (
+              <Alert severity="info">אין משתמשים זמינים להוספה למשפחה</Alert>
+            ) : (
+              <FormControl fullWidth>
+                <InputLabel>בחר משתמש</InputLabel>
+                <Select
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                  label="בחר משתמש"
+                >
+                  {availableUsers.map((availableUser) => (
+                    <MenuItem key={availableUser.id} value={availableUser.id}>
+                      {availableUser.full_name} ({availableUser.email})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setOpenAddDialog(false); setSelectedUserId(''); }}>
+            ביטול
+          </Button>
+          <Button 
+            onClick={handleAddMember} 
+            variant="contained"
+            disabled={!selectedUserId || loadingUsers}
+          >
+            הוסף
           </Button>
         </DialogActions>
       </Dialog>

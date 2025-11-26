@@ -101,11 +101,21 @@ export const db = {
 
   // Users operations
   users: {
-    getAll: async () => {
-      const { data, error } = await supabase
+    getAll: async (filters = {}) => {
+      let query = supabase
         .from('users')
         .select('*, families(*)')
         .order('full_name')
+      
+      if (filters.familyId) {
+        query = query.eq('family_id', filters.familyId)
+      }
+      
+      if (filters.noFamily) {
+        query = query.is('family_id', null)
+      }
+      
+      const { data, error } = await query
       if (error) throw error
       return data
     },
