@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
+import { getSharedTestData, cleanupTestData } from './setup/testData.js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
@@ -10,35 +11,34 @@ describe('Books API Endpoints', () => {
   let testBookId = null
 
   beforeAll(async () => {
-    // Create test user and family
-    const timestamp = Date.now()
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `booktest${timestamp}@example.com`,
-        password: 'testpass123',
-        fullName: 'Book Test User',
-        phone: '1234567890',
-        familyName: 'Book Test Family'
-      })
+    // Use shared test user and family
+    const sharedData = getSharedTestData()
+    testUserId = sharedData.userId
+    testFamilyId = sharedData.familyId
 
-    testUserId = response.body.user?.id
-    testFamilyId = response.body.family_id
+    // Try to find existing test book first
+    const booksResponse = await request(app)
+      .get(`/api/books?familyId=${testFamilyId}`)
+    
+    if (booksResponse.body.books && booksResponse.body.books.length > 0) {
+      // Use first book from shared family
+      testBookId = booksResponse.body.books[0].id
+    } else {
+      // Create a test book if none exists
+      const bookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: 'Test Book',
+          author: 'Test Author',
+          family_id: testFamilyId,
+          genre: 'Fiction',
+          age_range: 'Young Adult'
+        })
 
-    // Create a test book
-    const bookResponse = await request(app)
-      .post('/api/books')
-      .set('x-user-id', testUserId)
-      .send({
-        title: 'Test Book',
-        author: 'Test Author',
-        family_id: testFamilyId,
-        genre: 'Fiction',
-        age_range: 'Young Adult'
-      })
-
-    if (bookResponse.body.book) {
-      testBookId = bookResponse.body.book.id
+      if (bookResponse.body.book) {
+        testBookId = bookResponse.body.book.id
+      }
     }
   })
 
@@ -54,8 +54,6 @@ describe('Books API Endpoints', () => {
     })
 
     it('should filter books by familyId', async () => {
-      if (!testFamilyId) return
-
       const response = await request(app)
         .get(`/api/books?familyId=${testFamilyId}`)
         .expect('Content-Type', /json/)
@@ -145,8 +143,6 @@ describe('Books API Endpoints', () => {
 
   describe('GET /api/books/:id', () => {
     it('should return book by ID', async () => {
-      if (!testBookId) return
-
       const response = await request(app)
         .get(`/api/books/${testBookId}`)
         .expect('Content-Type', /json/)
@@ -178,8 +174,6 @@ describe('Books API Endpoints', () => {
 
   describe('GET /api/books/:id/families', () => {
     it('should return families that have the book', async () => {
-      if (!testBookId) return
-
       const response = await request(app)
         .get(`/api/books/${testBookId}/families`)
         .expect('Content-Type', /json/)
@@ -201,8 +195,6 @@ describe('Books API Endpoints', () => {
 
   describe('POST /api/books', () => {
     it('should create book with valid data', async () => {
-      if (!testFamilyId || !testUserId) return
-
       const timestamp = Date.now()
       const response = await request(app)
         .post('/api/books')
@@ -220,6 +212,9 @@ describe('Books API Endpoints', () => {
       expect(response.body).toHaveProperty('book')
       expect(response.body.book).toHaveProperty('id')
       expect(response.body.book.title).toContain('New Book')
+
+      // Cleanup created book
+      await request(app).delete(`/api/books/${response.body.book.id}`).set('x-user-id', testUserId)
     })
 
     it('should return JSON error for missing required fields', async () => {
@@ -235,8 +230,6 @@ describe('Books API Endpoints', () => {
     })
 
     it('should handle books without ISBN', async () => {
-      if (!testFamilyId || !testUserId) return
-
       const timestamp = Date.now()
       const response = await request(app)
         .post('/api/books')
@@ -250,11 +243,12 @@ describe('Books API Endpoints', () => {
         .expect(201)
 
       expect(response.body).toHaveProperty('book')
+
+      // Cleanup created book
+      await request(app).delete(`/api/books/${response.body.book.id}`).set('x-user-id', testUserId)
     })
 
     it('should set default status to available', async () => {
-      if (!testFamilyId || !testUserId) return
-
       const timestamp = Date.now()
       const response = await request(app)
         .post('/api/books')
@@ -267,13 +261,14 @@ describe('Books API Endpoints', () => {
         .expect(201)
 
       expect(response.body.book.status).toBe('available')
+
+      // Cleanup created book
+      await request(app).delete(`/api/books/${response.body.book.id}`).set('x-user-id', testUserId)
     })
   })
 
   describe('PUT /api/books/:id', () => {
     it('should update book with valid data', async () => {
-      if (!testBookId) return
-
       const response = await request(app)
         .put(`/api/books/${testBookId}`)
         .send({
@@ -300,8 +295,6 @@ describe('Books API Endpoints', () => {
 
   describe('DELETE /api/books/:id', () => {
     it('should delete book', async () => {
-      if (!testFamilyId || !testUserId) return
-
       // Create a book to delete
       const timestamp = Date.now()
       const createResponse = await request(app)

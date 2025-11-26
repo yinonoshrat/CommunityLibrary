@@ -18,6 +18,7 @@ interface AddReviewDialogProps {
   onClose: () => void;
   bookId: string;
   bookTitle: string;
+  userId: string;
   onReviewAdded?: () => void;
 }
 
@@ -26,6 +27,7 @@ export default function AddReviewDialog({
   onClose,
   bookId,
   bookTitle,
+  userId,
   onReviewAdded,
 }: AddReviewDialogProps) {
   const [rating, setRating] = useState<number | null>(5);
@@ -51,6 +53,7 @@ export default function AddReviewDialog({
       await apiCall(`/api/books/${bookId}/reviews`, {
         method: 'POST',
         body: JSON.stringify({
+          user_id: userId,
           rating,
           review_text: reviewText,
         }),

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Container,
   Typography,
@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import LoanCard from '../components/LoanCard';
 import ReturnBookDialog from '../components/ReturnBookDialog';
-import Navbar from '../components/Navbar';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Loan {
   id: string;
@@ -69,6 +69,7 @@ function TabPanel(props: TabPanelProps) {
 }
 
 export default function LoansDashboard() {
+  const { user } = useAuth();
   const [tabValue, setTabValue] = useState(0);
   const [lentLoans, setLentLoans] = useState<Loan[]>([]);
   const [borrowedLoans, setBorrowedLoans] = useState<Loan[]>([]);
@@ -77,19 +78,36 @@ export default function LoansDashboard() {
   const [error, setError] = useState('');
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
+  const [familyId, setFamilyId] = useState<string | null>(null);
 
-  // Get user info from localStorage
-  const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
-  const familyId = user?.family_id;
-
+  // Fetch family ID from user profile
   useEffect(() => {
-    if (familyId) {
-      fetchLoans();
-    }
-  }, [familyId]);
+    const fetchUserProfile = async () => {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
 
-  const fetchLoans = async () => {
+      try {
+        const userResponse = await fetch(`/api/users/${user.id}`);
+        const userData = await userResponse.json();
+        
+        if (userData.user?.family_id) {
+          setFamilyId(userData.user.family_id);
+        } else {
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Error fetching user profile:', err);
+        setError('שגיאה בטעינת פרטי משתמש');
+        setLoading(false);
+      }
+    };
+
+    fetchUserProfile();
+  }, [user]);
+
+  const fetchLoans = useCallback(async () => {
     if (!familyId) return;
 
     setLoading(true);
@@ -143,7 +161,13 @@ export default function LoansDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [familyId]);
+
+  useEffect(() => {
+    if (familyId) {
+      fetchLoans();
+    }
+  }, [familyId, fetchLoans]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -160,21 +184,16 @@ export default function LoansDashboard() {
 
   if (loading) {
     return (
-      <>
-        <Navbar user={user} />
-        <Container maxWidth="lg" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 } }}>
-          <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
-            <CircularProgress />
-          </Box>
-        </Container>
-      </>
+      <Container maxWidth="lg" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 } }}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
+          <CircularProgress />
+        </Box>
+      </Container>
     );
   }
 
   return (
-    <>
-      <Navbar user={user} />
-      <Container maxWidth="lg" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 } }}>
+    <Container maxWidth="lg" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 } }}>
         <Box mb={4}>
           <Typography variant="h4" component="h1" gutterBottom>
             ניהול השאלות
@@ -246,6 +265,5 @@ export default function LoansDashboard() {
           />
         )}
       </Container>
-    </>
   );
 }

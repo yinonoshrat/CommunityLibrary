@@ -28,6 +28,8 @@ interface Loan {
   };
   borrower_family?: {
     name: string;
+    phone?: string;
+    whatsapp?: string;
   };
 }
 
@@ -62,13 +64,14 @@ export default function ReturnBookDialog({
     setError('');
 
     try {
-      const response = await fetch(`/api/loans/${loan.id}/return`, {
+      const response = await fetch(`/api/loans/${loan.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          actualReturnDate: returnDate,
+          status: 'returned',
+          return_date: returnDate,
           notes: notes || null
         }),
       });

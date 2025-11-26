@@ -238,6 +238,7 @@ export default function BookReviews({ bookId, bookTitle }: BookReviewsProps) {
         onClose={() => setShowAddDialog(false)}
         bookId={bookId}
         bookTitle={bookTitle}
+        userId={user?.id || ''}
         onReviewAdded={loadReviews}
       />
     </Box>

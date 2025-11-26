@@ -31,19 +31,25 @@ export default function LikeButton({ bookId, size = 'medium', showCount = true }
   };
 
   const handleToggleLike = async () => {
-    if (!user || loading) return;
+    if (!user?.id || loading) return;
 
     try {
       setLoading(true);
       const data = await apiCall(`/api/books/${bookId}/likes`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+        }),
       });
 
-      // Update UI based on response
-      if (data.action === 'liked') {
+      // Update UI based on server response
+      if (data.liked === true) {
         setLiked(true);
         setLikeCount(prev => prev + 1);
-      } else {
+      } else if (data.liked === false) {
         setLiked(false);
         setLikeCount(prev => Math.max(0, prev - 1));
       }

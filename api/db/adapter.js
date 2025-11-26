@@ -375,10 +375,12 @@ export const db = {
         .from('loans')
         .select(`
           *,
-          family_books(
+          family_books!family_book_id(
             id,
             book_catalog(title, title_hebrew, author, cover_image_url)
-          )
+          ),
+          borrower_family:families!borrower_family_id(name, phone, whatsapp),
+          owner_family:families!owner_family_id(name, phone, whatsapp)
         `)
 
       if (filters.borrowerFamilyId) query = query.eq('borrower_family_id', filters.borrowerFamilyId)
@@ -391,11 +393,8 @@ export const db = {
       const { data, error } = await query
       if (error) throw error
       
-      // Flatten the nested structure for backward compatibility
-      return data.map(loan => ({
-        ...loan,
-        books: loan.family_books?.book_catalog
-      }))
+      // Return with nested structure for frontend
+      return data || []
     },
 
     getById: async (id) => {
@@ -403,9 +402,9 @@ export const db = {
         .from('loans')
         .select(`
           *,
-          family_books!inner(
+          family_books!family_book_id(
             id,
-            book_catalog:book_catalog(title, title_hebrew, author, cover_image_url)
+            book_catalog(title, title_hebrew, author, cover_image_url)
           ),
           borrower_family:families!borrower_family_id(name, phone, whatsapp),
           owner_family:families!owner_family_id(name, phone, whatsapp),
@@ -415,11 +414,7 @@ export const db = {
         .single()
       if (error) throw error
       
-      // Flatten for backward compatibility
-      return {
-        ...data,
-        books: data.family_books?.book_catalog
-      }
+      return data
     },
 
     create: async (loan) => {
@@ -515,6 +510,7 @@ export const db = {
         .insert({
           book_catalog_id: catalogId,
           user_id: review.user_id,
+          rating: review.rating,
           review_text: review.review_text
         })
         .select()

@@ -89,10 +89,10 @@ export default function CreateLoanDialog({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          bookId: book.id,
-          borrowerFamilyId: selectedFamilyId,
-          ownerFamilyId: userFamilyId,
-          requesterId: userId,
+          family_book_id: book.id,
+          borrower_family_id: selectedFamilyId,
+          owner_family_id: userFamilyId,
+          requester_user_id: userId,
           notes: notes || null
         }),
       });

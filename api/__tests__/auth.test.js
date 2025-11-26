@@ -52,18 +52,18 @@ describe('Auth API Endpoints', () => {
     })
 
     it('should return JSON error for invalid email', async () => {
-      const timestamp = Date.now()
       const response = await request(app)
         .post('/api/auth/register')
         .send({
-          email: `invalid-email-${timestamp}`, // Missing @ symbol
+          email: '', // Empty email should be invalid
           password: 'testpass123',
           fullName: 'Test User',
           phone: '1234567890'
         })
         .expect('Content-Type', /json/)
+        .expect(400)
 
-      // Supabase will reject this, should return error
+      // Should return error for missing email
       expect(response.body).toHaveProperty('error')
       expect(typeof response.body.error).toBe('string')
     })

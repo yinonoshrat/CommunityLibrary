@@ -28,6 +28,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiCall } from '../utils/apiCall';
 import CreateLoanDialog from '../components/CreateLoanDialog';
+import ReturnBookDialog from '../components/ReturnBookDialog';
 import BookReviews from '../components/BookReviews';
 import LikeButton from '../components/LikeButton';
 
@@ -61,6 +62,8 @@ export default function BookDetails() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [activeLoan, setActiveLoan] = useState<any>(null);
 
   useEffect(() => {
     fetchUserFamily();
@@ -87,11 +90,28 @@ export default function BookDetails() {
       setError(null);
       const response = await apiCall<{ book: Book }>(`/api/books/${id}`);
       setBook(response.book);
+      
+      // If book is on loan and user is owner, fetch the active loan
+      if (response.book.status === 'on_loan' && userFamilyId && response.book.family_id === userFamilyId) {
+        fetchActiveLoan(response.book.id);
+      }
+      
       setLoading(false);
     } catch (err: any) {
       console.error('Failed to fetch book:', err);
       setError(err.message || 'שגיאה בטעינת פרטי הספר');
       setLoading(false);
+    }
+  };
+
+  const fetchActiveLoan = async (bookId: string) => {
+    try {
+      const response = await apiCall<{ loans: any[] }>(`/api/loans?bookId=${bookId}&status=active`);
+      if (response.loans && response.loans.length > 0) {
+        setActiveLoan(response.loans[0]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch active loan:', err);
     }
   };
 
@@ -113,6 +133,11 @@ export default function BookDetails() {
   };
 
   const handleLoanSuccess = () => {
+    fetchBook(); // Refresh book details to update status
+  };
+
+  const handleReturnSuccess = () => {
+    setActiveLoan(null);
     fetchBook(); // Refresh book details to update status
   };
 
@@ -318,6 +343,15 @@ export default function BookDetails() {
                     השאל ספר
                   </Button>
                 )}
+                {book.status === 'on_loan' && activeLoan && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={() => setReturnDialogOpen(true)}
+                  >
+                    סמן כהוחזר
+                  </Button>
+                )}
                 <Button
                   variant="contained"
                   startIcon={<EditIcon />}
@@ -379,6 +413,16 @@ export default function BookDetails() {
           onSuccess={handleLoanSuccess}
         />
       )}
+
+      {/* Return Book Dialog */}
+      {activeLoan && (
+        <ReturnBookDialog
+          open={returnDialogOpen}
+          onClose={() => setReturnDialogOpen(false)}
+          loan={activeLoan}
+          onSuccess={handleReturnSuccess}
+        />
+      )}         
     </Container>
   );
 }

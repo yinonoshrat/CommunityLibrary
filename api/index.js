@@ -61,6 +61,35 @@ const upload = multer({
 app.use(cors());
 app.use(express.json());
 
+// Middleware to extract user ID from JWT token
+app.use(async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    try {
+      // Verify token with Supabase
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (user && !error) {
+        // Get the actual user ID from our users table using auth_id
+        const { data: userData } = await supabase
+          .from('users')
+          .select('id')
+          .eq('auth_id', user.id)
+          .single();
+        
+        if (userData) {
+          // Set user ID in header for endpoints to use
+          req.headers['x-user-id'] = userData.id;
+        }
+      }
+    } catch (err) {
+      // Silently fail - endpoints will handle missing user ID
+      console.error('Token verification error:', err.message);
+    }
+  }
+  next();
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Community Library API is running' });
@@ -555,13 +584,14 @@ app.post('/api/loans', async (req, res) => {
       req.body.family_book_id = req.body.book_id
     }
     
+    // Always create loans with active status
+    req.body.status = 'active'
+    
     const loan = await db.loans.create(req.body);
     
-    // Update book status to on_loan (new status name)
-    if (req.body.status === 'active') {
-      const bookId = req.body.family_book_id || req.body.book_id
-      await db.books.update(bookId, { status: 'on_loan' });
-    }
+    // Update book status to on_loan
+    const bookId = req.body.family_book_id || req.body.book_id
+    await db.books.update(bookId, { status: 'on_loan' });
     
     res.status(201).json({ loan });
   } catch (error) {
@@ -599,9 +629,18 @@ app.get('/api/books/:bookId/reviews', async (req, res) => {
 
 app.post('/api/books/:bookId/reviews', async (req, res) => {
   try {
+    // Get user_id from header (preferred) or body (for backwards compatibility)
+    const userId = req.headers['x-user-id'] || req.body.user_id;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
     const review = await db.reviews.create({
       book_id: req.params.bookId,
-      ...req.body
+      user_id: userId,
+      rating: req.body.rating,
+      review_text: req.body.review_text
     });
     res.status(201).json({ review });
   } catch (error) {

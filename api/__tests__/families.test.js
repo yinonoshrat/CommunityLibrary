@@ -1,28 +1,25 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
+import { getSharedTestData } from './setup/testData.js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
+
+// Helper to ensure test data exists
+const requireTestData = (data, message) => {
+  if (!data) {
+    throw new Error(`Test setup failed: ${message}`)
+  }
+}
 
 describe('Families API Endpoints', () => {
   let testFamilyId = null
   let authToken = null
 
   beforeAll(async () => {
-    // Create a test user and family
-    const timestamp = Date.now()
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `familytest${timestamp}@example.com`,
-        password: 'testpass123',
-        fullName: 'Family Test User',
-        phone: '1234567890',
-        familyName: 'Test Family for Families',
-        familyPhone: '9876543210'
-      })
-
-    testFamilyId = response.body.family_id
+    // Use shared test user and family
+    const sharedData = getSharedTestData()
+    testFamilyId = sharedData.familyId
   })
 
   describe('GET /api/families', () => {
@@ -60,7 +57,7 @@ describe('Families API Endpoints', () => {
 
   describe('GET /api/families/:id', () => {
     it('should return family by ID', async () => {
-      if (!testFamilyId) return
+      requireTestData(testFamilyId, 'testFamilyId is required')
 
       const response = await request(app)
         .get(`/api/families/${testFamilyId}`)
@@ -109,6 +106,9 @@ describe('Families API Endpoints', () => {
       expect(response.body).toHaveProperty('family')
       expect(response.body.family).toHaveProperty('id')
       expect(response.body.family.name).toContain('New Family')
+
+      // Cleanup created family
+      await request(app).delete(`/api/families/${response.body.family.id}`)
     })
 
     it('should return JSON error for missing required fields', async () => {
@@ -135,12 +135,15 @@ describe('Families API Endpoints', () => {
         .expect(201)
 
       expect(response.body).toHaveProperty('family')
+
+      // Cleanup created family
+      await request(app).delete(`/api/families/${response.body.family.id}`)
     })
   })
 
   describe('PUT /api/families/:id', () => {
     it('should update family with valid data', async () => {
-      if (!testFamilyId) return
+      requireTestData(testFamilyId, 'testFamilyId is required')
 
       const response = await request(app)
         .put(`/api/families/${testFamilyId}`)
@@ -168,7 +171,7 @@ describe('Families API Endpoints', () => {
 
   describe('GET /api/families/:id/members', () => {
     it('should return family members', async () => {
-      if (!testFamilyId) return
+      requireTestData(testFamilyId, 'testFamilyId is required')
 
       const response = await request(app)
         .get(`/api/families/${testFamilyId}/members`)

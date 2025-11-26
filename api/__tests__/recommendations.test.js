@@ -1,8 +1,23 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
+import { getSharedTestData } from './setup/testData.js'
+import { createClient } from '@supabase/supabase-js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
+
+// Helper to ensure test data exists
+const requireTestData = (data, message) => {
+  if (!data) {
+    throw new Error(`Test setup failed: ${message}`)
+  }
+}
+
+// Initialize Supabase for creating second family
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
 describe('Recommendations API Endpoint', () => {
   let testUserId = null
@@ -13,74 +28,132 @@ describe('Recommendations API Endpoint', () => {
   let recommendationBookId = null
 
   beforeAll(async () => {
-    // Create test user and family
-    const timestamp = Date.now()
-    const userResponse = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `rectest${timestamp}@example.com`,
-        password: 'testpass123',
-        fullName: 'Recommendation Test User',
-        phone: '1111111111',
-        familyName: 'Recommendation Test Family'
-      })
+    // Use shared test user and family
+    const sharedData = getSharedTestData()
+    testUserId = sharedData.userId
+    testFamilyId = sharedData.familyId
 
-    testUserId = userResponse.body.user?.id
-    testFamilyId = userResponse.body.family_id
+    // Create or find another family for recommendations
+    const { data: existingFamily } = await supabase
+      .from('families')
+      .select('id')
+      .eq('name', 'Recommendations Other Family')
+      .maybeSingle()
 
-    // Create another family for recommendations
-    const otherUserResponse = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `recother${timestamp}@example.com`,
-        password: 'testpass123',
-        fullName: 'Other User',
-        phone: '2222222222',
-        familyName: 'Other Family'
-      })
+    if (existingFamily) {
+      otherFamilyId = existingFamily.id
+    } else {
+      const { data: newFamily } = await supabase
+        .from('families')
+        .insert({ name: 'Recommendations Other Family', phone: '2222222222' })
+        .select()
+        .single()
+      otherFamilyId = newFamily.id
+    }
 
-    otherFamilyId = otherUserResponse.body.family_id
+    // Get existing books or create new ones
+    const booksResponse = await request(app)
+      .get(`/api/books?familyId=${testFamilyId}`)
+    
+    if (booksResponse.body.books && booksResponse.body.books.length >= 2) {
+      testBook1Id = booksResponse.body.books[0].id
+      testBook2Id = booksResponse.body.books[1].id
+    } else if (booksResponse.body.books && booksResponse.body.books.length === 1) {
+      testBook1Id = booksResponse.body.books[0].id
+      
+      const book2Response = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: 'Fiction Book 2',
+          author: 'Author B',
+          family_id: testFamilyId,
+          genre: 'Fiction',
+          age_range: 'Young Adult'
+        })
+      testBook2Id = book2Response.body.book?.id
+    } else {
+      // Create books for the test user's family
+      const book1Response = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: 'Fiction Book 1',
+          author: 'Author A',
+          family_id: testFamilyId,
+          genre: 'Fiction',
+          age_range: 'Young Adult'
+        })
 
-    // Create books for the test user's family
-    const book1Response = await request(app)
-      .post('/api/books')
-      .set('x-user-id', testUserId)
-      .send({
-        title: 'Fiction Book 1',
-        author: 'Author A',
-        family_id: testFamilyId,
-        genre: 'Fiction',
-        age_range: 'Young Adult'
-      })
+      testBook1Id = book1Response.body.book?.id
 
-    testBook1Id = book1Response.body.book?.id
+      const book2Response = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: 'Fiction Book 2',
+          author: 'Author B',
+          family_id: testFamilyId,
+          genre: 'Fiction',
+          age_range: 'Young Adult'
+        })
 
-    const book2Response = await request(app)
-      .post('/api/books')
-      .set('x-user-id', testUserId)
-      .send({
-        title: 'Fiction Book 2',
-        author: 'Author B',
-        family_id: testFamilyId,
-        genre: 'Fiction',
-        age_range: 'Young Adult'
-      })
+      testBook2Id = book2Response.body.book?.id
+    }
 
-    testBook2Id = book2Response.body.book?.id
+    // Check if recommendation book exists in other family
+    const otherBooksResponse = await request(app)
+      .get(`/api/books?familyId=${otherFamilyId}`)
+    
+    if (otherBooksResponse.body.books && otherBooksResponse.body.books.length > 0) {
+      recommendationBookId = otherBooksResponse.body.books[0].id
+    } else {
+      // Create a book in another family for recommendations
+      const { data: otherUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('family_id', otherFamilyId)
+        .maybeSingle()
 
-    // Create a book in another family for recommendations
-    const recBookResponse = await request(app)
-      .post('/api/books')
-      .set('x-user-id', otherUserResponse.body.user.id)
-      .send({
-        title: 'Recommended Fiction Book',
-        author: 'Author C',
-        family_id: otherFamilyId,
-        genre: 'Fiction',
-        age_range: 'Young Adult'
-      })
+      let otherUserId = otherUser?.id
+      if (!otherUserId) {
+        // Create a user for the other family
+        const { data: authUser } = await supabase.auth.admin.createUser({
+          email: `recother@testfamily.com`,
+          password: 'testpass123',
+          email_confirm: true
+        })
 
-    recommendationBookId = recBookResponse.body.book?.id
+        const { data: newUser } = await supabase
+          .from('users')
+          .insert({
+            id: authUser.user.id,
+            email: 'recother@testfamily.com',
+            auth_email: 'recother@testfamily.com',
+            full_name: 'Other Family User',
+            phone: '2222222222',
+            whatsapp: '2222222222',
+            family_id: otherFamilyId,
+            is_family_admin: true
+          })
+          .select()
+          .single()
+        otherUserId = newUser.id
+      }
+
+      const recBookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', otherUserId)
+        .send({
+          title: 'Recommendation Book',
+          author: 'Recommendation Author',
+          family_id: otherFamilyId,
+          genre: 'Fiction',
+          age_range: 'Young Adult'
+        })
+
+      recommendationBookId = recBookResponse.body.book?.id
+    }
 
     // Add likes and reviews to establish preferences
     if (testBook1Id) {
@@ -112,7 +185,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should return recommendations array with valid userId', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -124,7 +197,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should include match_percentage in recommendations', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -140,7 +213,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should include reason in recommendations', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -155,7 +228,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should exclude books from user\'s own family', async () => {
-      if (!testUserId || !testBook1Id) return
+      requireTestData(testUserId, 'testUserId is required'); requireTestData(testBook1Id, 'testBook1Id is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -169,7 +242,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should exclude already liked books', async () => {
-      if (!testUserId || !testBook1Id) return
+      requireTestData(testUserId, 'testUserId is required'); requireTestData(testBook1Id, 'testBook1Id is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -183,7 +256,8 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should exclude already reviewed books', async () => {
-      if (!testUserId || !testBook2Id) return
+      requireTestData(testUserId, 'testUserId is required')
+      requireTestData(testBook2Id, 'testBook2Id is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -197,7 +271,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should return maximum 12 recommendations', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -207,7 +281,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should sort recommendations by match percentage', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -224,33 +298,45 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should work for users with no preferences', async () => {
-      // Create a new user with no likes or reviews
-      const timestamp = Date.now()
-      const newUserResponse = await request(app)
-        .post('/api/auth/register')
-        .send({
-          email: `newrec${timestamp}@example.com`,
-          password: 'testpass123',
-          fullName: 'New Rec User',
-          phone: '3333333333',
-          familyName: 'New Rec Family'
-        })
+      // Create a temporary user without any books/likes/reviews
+      const { data: tempFamily } = await supabase
+        .from('families')
+        .insert({ name: 'Temp Rec No Prefs Family', phone: '3333333333' })
+        .select()
+        .single()
 
-      const newUserId = newUserResponse.body.user?.id
-      
-      // Skip test if user creation failed
-      if (!newUserId) {
-        expect(newUserResponse.body.user).toBeDefined()
-        return
-      }
+      const { data: authUser } = await supabase.auth.admin.createUser({
+        email: `temprec${Date.now()}@testfamily.com`,
+        password: 'testpass123',
+        email_confirm: true
+      })
+
+      const { data: tempUser } = await supabase
+        .from('users')
+        .insert({
+          id: authUser.user.id,
+          email: authUser.user.email,
+          auth_email: authUser.user.email,
+          full_name: 'Temp Rec User',
+          phone: '3333333333',
+          whatsapp: '3333333333',
+          family_id: tempFamily.id,
+          is_family_admin: true
+        })
+        .select()
+        .single()
 
       const response = await request(app)
-        .get(`/api/recommendations?userId=${newUserId}`)
+        .get(`/api/recommendations?userId=${tempUser.id}`)
         .expect('Content-Type', /json/)
         .expect(200)
 
       expect(response.body).toHaveProperty('recommendations')
       expect(Array.isArray(response.body.recommendations)).toBe(true)
+
+      // Cleanup: delete temp user (which cascades to users table) and family
+      await supabase.auth.admin.deleteUser(authUser.user.id)
+      await supabase.from('families').delete().eq('id', tempFamily.id)
     })
 
     it('should return JSON error for invalid userId', async () => {
@@ -273,7 +359,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should include family information in recommendations', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)
@@ -286,7 +372,7 @@ describe('Recommendations API Endpoint', () => {
     })
 
     it('should prefer books matching liked genres', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .get(`/api/recommendations?userId=${testUserId}`)

@@ -1,29 +1,27 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
 import { Buffer } from 'buffer'
+import { getSharedTestData } from './setup/testData.js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
+
+// Helper to ensure test data exists
+const requireTestData = (data, message) => {
+  if (!data) {
+    throw new Error(`Test setup failed: ${message}`)
+  }
+}
 
 describe('Bulk Upload API Endpoints', () => {
   let testUserId = null
   let testFamilyId = null
 
   beforeAll(async () => {
-    // Create test user and family
-    const timestamp = Date.now()
-    const response = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `bulktest${timestamp}@example.com`,
-        password: 'testpass123',
-        fullName: 'Bulk Test User',
-        phone: '1234567890',
-        familyName: 'Bulk Test Family'
-      })
-
-    testUserId = response.body.user?.id
-    testFamilyId = response.body.family_id
+    // Use shared test user and family
+    const sharedData = getSharedTestData()
+    testUserId = sharedData.userId
+    testFamilyId = sharedData.familyId
   })
 
   describe('POST /api/books/detect-from-image', () => {
@@ -115,7 +113,7 @@ describe('Bulk Upload API Endpoints', () => {
     })
 
     it('should return JSON error for more than 50 books', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const books = Array.from({ length: 51 }, (_, i) => ({
         title: `Book ${i}`,
@@ -134,7 +132,7 @@ describe('Bulk Upload API Endpoints', () => {
     })
 
     it('should add valid books successfully', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const timestamp = Date.now()
       const books = [
@@ -166,10 +164,17 @@ describe('Bulk Upload API Endpoints', () => {
       expect(response.body.added).toBe(2)
       expect(response.body.failed).toBe(0)
       expect(Array.isArray(response.body.books)).toBe(true)
+
+      // Cleanup created books
+      if (response.body.books && response.body.books.length > 0) {
+        for (const book of response.body.books) {
+          await request(app).delete(`/api/books/${book.id}`).set('x-user-id', testUserId)
+        }
+      }
     })
 
     it('should handle books with missing optional fields', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const timestamp = Date.now()
       const books = [
@@ -189,14 +194,22 @@ describe('Bulk Upload API Endpoints', () => {
 
       expect(response.body.success).toBe(true)
       expect(response.body.added).toBe(1)
+
+      // Cleanup created book
+      if (response.body.books && response.body.books.length > 0) {
+        for (const book of response.body.books) {
+          await request(app).delete(`/api/books/${book.id}`).set('x-user-id', testUserId)
+        }
+      }
     })
 
     it('should report errors for invalid books', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
+      const timestamp = Date.now()
       const books = [
         {
-          title: 'Valid Book',
+          title: `Valid Book ${timestamp}`,
           author: 'Valid Author'
         },
         {
@@ -220,10 +233,17 @@ describe('Bulk Upload API Endpoints', () => {
       expect(response.body.added).toBe(1)
       expect(response.body.failed).toBe(2)
       expect(response.body.errors).toHaveLength(2)
+
+      // Cleanup created book (only the valid one was added)
+      if (response.body.books && response.body.books.length > 0) {
+        for (const book of response.body.books) {
+          await request(app).delete(`/api/books/${book.id}`).set('x-user-id', testUserId)
+        }
+      }
     })
 
     it('should set default author for books without author', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const timestamp = Date.now()
       const books = [
@@ -241,10 +261,17 @@ describe('Bulk Upload API Endpoints', () => {
 
       expect(response.body.added).toBe(1)
       expect(response.body.books[0].author).toBe('לא ידוע')
+
+      // Cleanup created book
+      if (response.body.books && response.body.books.length > 0) {
+        for (const book of response.body.books) {
+          await request(app).delete(`/api/books/${book.id}`).set('x-user-id', testUserId)
+        }
+      }
     })
 
     it('should always return valid JSON even with errors', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .post('/api/books/bulk-add')
@@ -260,7 +287,7 @@ describe('Bulk Upload API Endpoints', () => {
     })
 
     it('should include all book fields in response', async () => {
-      if (!testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
       const timestamp = Date.now()
       const books = [
@@ -272,7 +299,7 @@ describe('Bulk Upload API Endpoints', () => {
           publisher: 'Test Publisher',
           publish_year: 2024,
           pages: 300,
-          isbn: '1234567890',
+          isbn: `ISBN-${timestamp}`, // Unique ISBN
           description: 'Test description',
           series: 'Test Series',
           series_number: 1
@@ -290,6 +317,13 @@ describe('Bulk Upload API Endpoints', () => {
       expect(book.title).toContain('Complete Book')
       expect(book.genre).toBe('Mystery')
       expect(book.publisher).toBe('Test Publisher')
+
+      // Cleanup created book
+      if (response.body.books && response.body.books.length > 0) {
+        for (const createdBook of response.body.books) {
+          await request(app).delete(`/api/books/${createdBook.id}`).set('x-user-id', testUserId)
+        }
+      }
     })
   })
 })

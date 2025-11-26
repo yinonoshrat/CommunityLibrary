@@ -1,8 +1,23 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
+import { getSharedTestData } from './setup/testData.js'
+import { createClient } from '@supabase/supabase-js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
+
+// Helper to ensure test data exists
+const requireTestData = (data, message) => {
+  if (!data) {
+    throw new Error(`Test setup failed: ${message}`)
+  }
+}
+
+// Initialize Supabase for creating second user
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
 describe('Reviews and Likes API Endpoints', () => {
   let testUserId = null
@@ -12,52 +27,79 @@ describe('Reviews and Likes API Endpoints', () => {
   let testReviewId = null
 
   beforeAll(async () => {
-    // Create test user 1
-    const timestamp = Date.now()
-    const user1Response = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `reviewtest1${timestamp}@example.com`,
+    // Use shared test user
+    const sharedData = getSharedTestData()
+    testUserId = sharedData.userId
+    testFamilyId = sharedData.familyId
+
+    // Create or find second user for multi-user tests
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', 'reviewtest2@testfamily.com')
+      .maybeSingle()
+
+    if (existingUser) {
+      testUser2Id = existingUser.id
+    } else {
+      // Create second user via Admin API
+      const { data: authUser } = await supabase.auth.admin.createUser({
+        email: 'reviewtest2@testfamily.com',
         password: 'testpass123',
-        fullName: 'Review Test User 1',
-        phone: '1111111111',
-        familyName: 'Review Test Family'
+        email_confirm: true
       })
 
-    testUserId = user1Response.body.user?.id
-    testFamilyId = user1Response.body.family_id
+      // Create family for second user
+      const { data: family2 } = await supabase
+        .from('families')
+        .insert({ name: 'Review Test Family 2', phone: '2222222222' })
+        .select()
+        .single()
 
-    // Create test user 2
-    const user2Response = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `reviewtest2${timestamp}@example.com`,
-        password: 'testpass123',
-        fullName: 'Review Test User 2',
-        phone: '2222222222',
-        familyName: 'Review Test Family 2'
-      })
+      // Insert user record
+      const { data: newUser } = await supabase
+        .from('users')
+        .insert({
+          id: authUser.user.id,
+          email: 'reviewtest2@testfamily.com',
+          auth_email: 'reviewtest2@testfamily.com',
+          full_name: 'Review Test User 2',
+          phone: '2222222222',
+          whatsapp: '2222222222',
+          family_id: family2.id,
+          is_family_admin: true
+        })
+        .select()
+        .single()
+      
+      testUser2Id = newUser.id
+    }
 
-    testUser2Id = user2Response.body.user.id
+    // Get existing book or create a test book
+    const booksResponse = await request(app)
+      .get(`/api/books?familyId=${testFamilyId}`)
+    
+    if (booksResponse.body.books && booksResponse.body.books.length > 0) {
+      testBookId = booksResponse.body.books[0].id
+    } else {
+      const bookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: 'Review Test Book',
+          author: 'Review Author',
+          family_id: testFamilyId
+        })
 
-    // Create a test book
-    const bookResponse = await request(app)
-      .post('/api/books')
-      .set('x-user-id', testUserId)
-      .send({
-        title: 'Review Test Book',
-        author: 'Review Author',
-        family_id: testFamilyId
-      })
-
-    if (bookResponse.body.book) {
-      testBookId = bookResponse.body.book.id
+      if (bookResponse.body.book) {
+        testBookId = bookResponse.body.book.id
+      }
     }
   })
 
   describe('GET /api/books/:bookId/reviews', () => {
     it('should return 200 and array of reviews', async () => {
-      if (!testBookId) return
+      requireTestData(testBookId, 'testBookId is required')
 
       const response = await request(app)
         .get(`/api/books/${testBookId}/reviews`)
@@ -69,13 +111,29 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should return empty array for book with no reviews', async () => {
-      if (!testBookId) return
+      requireTestData(testBookId, 'testBookId is required')
+
+      // Create a new book that definitely has no reviews
+      const timestamp = Date.now()
+      const bookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: `No Reviews Book ${timestamp}`,
+          author: 'No Reviews Author',
+          family_id: testFamilyId
+        })
+
+      const newBookId = bookResponse.body.book.id
 
       const response = await request(app)
-        .get(`/api/books/${testBookId}/reviews`)
+        .get(`/api/books/${newBookId}/reviews`)
         .expect(200)
 
       expect(response.body.reviews).toHaveLength(0)
+
+      // Cleanup
+      await request(app).delete(`/api/books/${newBookId}`).set('x-user-id', testUserId)
     })
 
     it('should return JSON error for invalid book ID', async () => {
@@ -88,7 +146,7 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should always return valid JSON', async () => {
-      if (!testBookId) return
+      requireTestData(testBookId, 'testBookId is required')
 
       const response = await request(app)
         .get(`/api/books/${testBookId}/reviews`)
@@ -101,7 +159,8 @@ describe('Reviews and Likes API Endpoints', () => {
 
   describe('POST /api/books/:bookId/reviews', () => {
     it('should create review with valid data including rating', async () => {
-      if (!testBookId || !testUserId) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .post(`/api/books/${testBookId}/reviews`)
@@ -121,7 +180,7 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should return JSON error for missing required fields', async () => {
-      if (!testBookId) return
+      requireTestData(testBookId, 'testBookId is required')
 
       const response = await request(app)
         .post(`/api/books/${testBookId}/reviews`)
@@ -135,7 +194,8 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should return JSON error for invalid rating', async () => {
-      if (!testBookId || !testUserId) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .post(`/api/books/${testBookId}/reviews`)
@@ -151,7 +211,8 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should return JSON error for rating less than 1', async () => {
-      if (!testBookId || !testUserId) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(testUserId, 'testUserId is required')
 
       const response = await request(app)
         .post(`/api/books/${testBookId}/reviews`)
@@ -167,10 +228,24 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should handle reviews with minimum rating (1 star)', async () => {
-      if (!testBookId || !testUser2Id) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(testUser2Id, 'testUser2Id is required')
+
+      // Create a new book for this test to avoid duplicate review issues
+      const timestamp = Date.now()
+      const bookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: `Min Rating Book ${timestamp}`,
+          author: 'Test Author',
+          family_id: testFamilyId
+        })
+      
+      const newBookId = bookResponse.body.book.id
 
       const response = await request(app)
-        .post(`/api/books/${testBookId}/reviews`)
+        .post(`/api/books/${newBookId}/reviews`)
         .send({
           user_id: testUser2Id,
           rating: 1,
@@ -180,10 +255,14 @@ describe('Reviews and Likes API Endpoints', () => {
         .expect(201)
 
       expect(response.body.review.rating).toBe(1)
+
+      // Cleanup
+      await request(app).delete(`/api/books/${newBookId}`).set('x-user-id', testUserId)
     })
 
     it('should prevent duplicate reviews from same user', async () => {
-      if (!testBookId || !testUserId) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(testUserId, 'testUserId is required')
 
       // Try to create another review by the same user
       const response = await request(app)
@@ -216,7 +295,7 @@ describe('Reviews and Likes API Endpoints', () => {
 
   describe('PUT /api/reviews/:id', () => {
     it('should update review with new rating and text', async () => {
-      if (!testReviewId) return
+      requireTestData(testReviewId, 'testReviewId is required')
 
       const response = await request(app)
         .put(`/api/reviews/${testReviewId}`)
@@ -233,7 +312,7 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should return JSON error for invalid rating in update', async () => {
-      if (!testReviewId) return
+      requireTestData(testReviewId, 'testReviewId is required')
 
       const response = await request(app)
         .put(`/api/reviews/${testReviewId}`)
@@ -263,7 +342,7 @@ describe('Reviews and Likes API Endpoints', () => {
 
   describe('DELETE /api/reviews/:id', () => {
     it('should delete review', async () => {
-      if (!testReviewId) return
+      requireTestData(testReviewId, 'testReviewId is required')
 
       const response = await request(app)
         .delete(`/api/reviews/${testReviewId}`)
@@ -287,7 +366,7 @@ describe('Reviews and Likes API Endpoints', () => {
 
   describe('GET /api/books/:bookId/likes', () => {
     it('should return likes for a book', async () => {
-      if (!testBookId) return
+      requireTestData(testBookId, 'testBookId is required')
 
       const response = await request(app)
         .get(`/api/books/${testBookId}/likes`)
@@ -301,13 +380,29 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should return zero count for book with no likes', async () => {
-      if (!testBookId) return
+      requireTestData(testUserId, 'testUserId is required')
+
+      // Create a new book with no likes
+      const timestamp = Date.now()
+      const bookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: `No Likes Book ${timestamp}`,
+          author: 'No Likes Author',
+          family_id: testFamilyId
+        })
+
+      const newBookId = bookResponse.body.book.id
 
       const response = await request(app)
-        .get(`/api/books/${testBookId}/likes`)
+        .get(`/api/books/${newBookId}/likes`)
         .expect(200)
 
       expect(response.body.count).toBe(0)
+
+      // Cleanup
+      await request(app).delete(`/api/books/${newBookId}`).set('x-user-id', testUserId)
     })
 
     it('should return JSON error for invalid book ID', async () => {
@@ -322,10 +417,23 @@ describe('Reviews and Likes API Endpoints', () => {
 
   describe('POST /api/books/:bookId/likes', () => {
     it('should toggle like (add like)', async () => {
-      if (!testBookId || !testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
+
+      // Create a new book for this test
+      const timestamp = Date.now()
+      const bookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: `Add Like Book ${timestamp}`,
+          author: 'Like Test Author',
+          family_id: testFamilyId
+        })
+
+      const newBookId = bookResponse.body.book.id
 
       const response = await request(app)
-        .post(`/api/books/${testBookId}/likes`)
+        .post(`/api/books/${newBookId}/likes`)
         .send({
           user_id: testUserId
         })
@@ -334,13 +442,35 @@ describe('Reviews and Likes API Endpoints', () => {
 
       expect(response.body).toHaveProperty('liked')
       expect(response.body.liked).toBe(true)
+
+      // Cleanup
+      await request(app).delete(`/api/books/${newBookId}`).set('x-user-id', testUserId)
     })
 
     it('should toggle like (remove like)', async () => {
-      if (!testBookId || !testUserId) return
+      requireTestData(testUserId, 'testUserId is required')
 
+      // Create a new book and add a like first
+      const timestamp = Date.now()
+      const bookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: `Remove Like Book ${timestamp}`,
+          author: 'Unlike Test Author',
+          family_id: testFamilyId
+        })
+
+      const newBookId = bookResponse.body.book.id
+
+      // Add like first
+      await request(app)
+        .post(`/api/books/${newBookId}/likes`)
+        .send({ user_id: testUserId })
+
+      // Remove like
       const response = await request(app)
-        .post(`/api/books/${testBookId}/likes`)
+        .post(`/api/books/${newBookId}/likes`)
         .send({
           user_id: testUserId
         })
@@ -349,10 +479,13 @@ describe('Reviews and Likes API Endpoints', () => {
 
       expect(response.body).toHaveProperty('liked')
       expect(response.body.liked).toBe(false)
+
+      // Cleanup
+      await request(app).delete(`/api/books/${newBookId}`).set('x-user-id', testUserId)
     })
 
     it('should return JSON error for missing user_id', async () => {
-      if (!testBookId) return
+      requireTestData(testBookId, 'testBookId is required')
 
       const response = await request(app)
         .post(`/api/books/${testBookId}/likes`)
@@ -376,7 +509,8 @@ describe('Reviews and Likes API Endpoints', () => {
     })
 
     it('should increment count when like is added', async () => {
-      if (!testBookId || !testUser2Id) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(testUser2Id, 'testUser2Id is required')
 
       // Add like
       await request(app)

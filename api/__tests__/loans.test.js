@@ -1,8 +1,23 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import request from 'supertest'
+import { getSharedTestData } from './setup/testData.js'
+import { createClient } from '@supabase/supabase-js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
+
+// Helper to ensure test data exists
+const requireTestData = (data, message) => {
+  if (!data) {
+    throw new Error(`Test setup failed: ${message}`)
+  }
+}
+
+// Initialize Supabase for creating second family
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
 
 describe('Loans API Endpoints', () => {
   let testUserId = null
@@ -12,46 +27,65 @@ describe('Loans API Endpoints', () => {
   let testLoanId = null
 
   beforeAll(async () => {
-    // Create owner family and user
-    const timestamp = Date.now()
-    const ownerResponse = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `loanowner${timestamp}@example.com`,
-        password: 'testpass123',
-        fullName: 'Loan Owner',
-        phone: '1234567890',
-        familyName: 'Owner Family'
-      })
+    // Use shared test user and family as owner
+    const sharedData = getSharedTestData()
+    testUserId = sharedData.userId
+    testFamilyId = sharedData.familyId
 
-    testUserId = ownerResponse.body.user?.id
-    testFamilyId = ownerResponse.body.family_id
+    // Create or find borrower family
+    const { data: existingFamily } = await supabase
+      .from('families')
+      .select('id')
+      .eq('name', 'Loans Test Borrower Family')
+      .maybeSingle()
 
-    // Create borrower family
-    const borrowerResponse = await request(app)
-      .post('/api/auth/register')
-      .send({
-        email: `loanborrower${timestamp}@example.com`,
-        password: 'testpass123',
-        fullName: 'Loan Borrower',
-        phone: '2222222222',
-        familyName: 'Borrower Family'
-      })
+    if (existingFamily) {
+      borrowerFamilyId = existingFamily.id
+    } else {
+      const { data: newFamily } = await supabase
+        .from('families')
+        .insert({ name: 'Loans Test Borrower Family', phone: '2222222222' })
+        .select()
+        .single()
+      borrowerFamilyId = newFamily.id
+    }
 
-    borrowerFamilyId = borrowerResponse.body.family_id
+    // Find or create a test book
+    const booksResponse = await request(app)
+      .get(`/api/books?familyId=${testFamilyId}`)
+    
+    if (booksResponse.body.books && booksResponse.body.books.length > 0) {
+      testBookId = booksResponse.body.books[0].id
+    } else {
+      const bookResponse = await request(app)
+        .post('/api/books')
+        .set('x-user-id', testUserId)
+        .send({
+          title: 'Loan Test Book',
+          author: 'Loan Author',
+          family_id: testFamilyId
+        })
 
-    // Create a test book
-    const bookResponse = await request(app)
-      .post('/api/books')
-      .set('x-user-id', testUserId)
-      .send({
-        title: 'Loan Test Book',
-        author: 'Loan Author',
-        family_id: testFamilyId
-      })
+      if (bookResponse.body.book) {
+        testBookId = bookResponse.body.book.id
+      }
+    }
 
-    if (bookResponse.body.book) {
-      testBookId = bookResponse.body.book.id
+    // Create a test loan for GET tests
+    if (testBookId && borrowerFamilyId) {
+      const loanResponse = await request(app)
+        .post('/api/loans')
+        .send({
+          family_book_id: testBookId,
+          borrower_family_id: borrowerFamilyId,
+          owner_family_id: testFamilyId,
+          requester_user_id: testUserId,
+          status: 'active'
+        })
+
+      if (loanResponse.body.loan) {
+        testLoanId = loanResponse.body.loan.id
+      }
     }
   })
 
@@ -105,7 +139,7 @@ describe('Loans API Endpoints', () => {
 
   describe('GET /api/loans/:id', () => {
     it('should return loan by ID', async () => {
-      if (!testLoanId) return
+      requireTestData(testLoanId, 'testLoanId is required')
 
       const response = await request(app)
         .get(`/api/loans/${testLoanId}`)
@@ -129,13 +163,16 @@ describe('Loans API Endpoints', () => {
 
   describe('POST /api/loans', () => {
     it('should create loan with valid data', async () => {
-      if (!testBookId || !borrowerFamilyId) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(borrowerFamilyId, 'borrowerFamilyId is required')
 
       const response = await request(app)
         .post('/api/loans')
         .send({
           family_book_id: testBookId,
           borrower_family_id: borrowerFamilyId,
+          owner_family_id: testFamilyId,
+          requester_user_id: testUserId,
           status: 'active'
         })
         .expect('Content-Type', /json/)
@@ -166,6 +203,8 @@ describe('Loans API Endpoints', () => {
         .send({
           book_id: testBookId,
           borrower_family_id: borrowerFamilyId,
+          owner_family_id: testFamilyId,
+          requester_user_id: testUserId,
           status: 'active'
         })
         .expect('Content-Type', /json/)
@@ -175,7 +214,9 @@ describe('Loans API Endpoints', () => {
     })
 
     it('should update book status to on_loan when loan is active', async () => {
-      if (!testBookId || !borrowerFamilyId || !testUserId) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(borrowerFamilyId, 'borrowerFamilyId is required')
+      requireTestData(testUserId, 'testUserId is required')
 
       // Create a new book for this test
       const timestamp = Date.now()
@@ -191,14 +232,18 @@ describe('Loans API Endpoints', () => {
       const bookId = bookResponse.body.book.id
 
       // Create loan
-      await request(app)
+      const loanResponse = await request(app)
         .post('/api/loans')
         .send({
           family_book_id: bookId,
           borrower_family_id: borrowerFamilyId,
+          owner_family_id: testFamilyId,
+          requester_user_id: testUserId,
           status: 'active'
         })
         .expect(201)
+
+      const loanId = loanResponse.body.loan?.id
 
       // Check book status
       const bookCheck = await request(app)
@@ -206,12 +251,18 @@ describe('Loans API Endpoints', () => {
         .expect(200)
 
       expect(bookCheck.body.book.status).toBe('on_loan')
+
+      // Cleanup: delete loan first, then book
+      if (loanId) {
+        await request(app).delete(`/api/loans/${loanId}`)
+      }
+      await request(app).delete(`/api/books/${bookId}`).set('x-user-id', testUserId)
     })
   })
 
   describe('PUT /api/loans/:id', () => {
     it('should update loan status', async () => {
-      if (!testLoanId) return
+      requireTestData(testLoanId, 'testLoanId is required')
 
       const response = await request(app)
         .put(`/api/loans/${testLoanId}`)
@@ -226,7 +277,9 @@ describe('Loans API Endpoints', () => {
     })
 
     it('should update book status when loan is returned', async () => {
-      if (!testBookId || !borrowerFamilyId || !testUserId) return
+      requireTestData(testBookId, 'testBookId is required')
+      requireTestData(borrowerFamilyId, 'borrowerFamilyId is required')
+      requireTestData(testUserId, 'testUserId is required')
 
       // Create a new book and loan for this test
       const timestamp = Date.now()
@@ -246,10 +299,12 @@ describe('Loans API Endpoints', () => {
         .send({
           family_book_id: bookId,
           borrower_family_id: borrowerFamilyId,
+          owner_family_id: testFamilyId,
+          requester_user_id: testUserId,
           status: 'active'
         })
 
-      const loanId = loanResponse.body.loan.id
+      const loanId = loanResponse.body.loan?.id
 
       // Return the loan
       await request(app)
@@ -263,6 +318,12 @@ describe('Loans API Endpoints', () => {
         .expect(200)
 
       expect(bookCheck.body.book.status).toBe('available')
+
+      // Cleanup: delete loan first, then book
+      if (loanId) {
+        await request(app).delete(`/api/loans/${loanId}`)
+      }
+      await request(app).delete(`/api/books/${bookId}`).set('x-user-id', testUserId)
     })
 
     it('should return JSON error for non-existent loan', async () => {
