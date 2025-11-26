@@ -62,6 +62,93 @@ export const theme = createTheme(
           },
         },
       },
+      // Compact TextField inputs
+      MuiTextField: {
+        defaultProps: {
+          size: 'small',
+        },
+        styleOverrides: {
+          root: {
+            '& .MuiOutlinedInput-root': {
+              fontSize: '1rem',
+            },
+          },
+        },
+      },
+      // Compact outlined inputs
+      MuiOutlinedInput: {
+        styleOverrides: {
+          root: {
+            paddingTop: '8px',
+            paddingBottom: '8px',
+          },
+          input: {
+            padding: '8px 14px',
+            fontSize: '1rem',
+          },
+        },
+      },
+      // Compact input labels
+      MuiInputLabel: {
+        styleOverrides: {
+          root: {
+            fontSize: '0.95rem',
+          },
+          outlined: {
+            transform: 'translate(14px, 10px) scale(1)',
+            '&.MuiInputLabel-shrink': {
+              transform: 'translate(14px, -9px) scale(0.75)',
+            },
+          },
+        },
+      },
+      // Compact buttons
+      MuiButton: {
+        styleOverrides: {
+          root: {
+            textTransform: 'none',
+            fontSize: '0.95rem',
+          },
+          sizeMedium: {
+            padding: '6px 16px',
+            minHeight: '36px',
+          },
+          sizeLarge: {
+            padding: '8px 22px',
+            minHeight: '40px',
+          },
+        },
+      },
+      // Compact select dropdowns
+      MuiSelect: {
+        defaultProps: {
+          size: 'small',
+        },
+        styleOverrides: {
+          select: {
+            padding: '8px 14px',
+            fontSize: '1rem',
+          },
+        },
+      },
+      // Compact autocomplete
+      MuiAutocomplete: {
+        styleOverrides: {
+          input: {
+            padding: '2px 4px !important',
+          },
+          inputRoot: {
+            paddingTop: '4px !important',
+            paddingBottom: '4px !important',
+          },
+        },
+      },
+      // Compact form controls
+      MuiFormControl: {
+        defaultProps: {
+          size: 'small',
+        },
+      },
     },
   },
   heIL // Hebrew locale

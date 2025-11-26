@@ -51,7 +51,8 @@ const upload = multer({
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      // Pass error as null to avoid HTML error page, check in route handler
+      cb(null, false);
     }
   }
 });
@@ -79,7 +80,10 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Create unique auth email by appending UUID to handle shared emails
     // The actual email is stored in the users table
-    const uniqueAuthEmail = `${email.split('@')[0]}+${Date.now()}-${Math.random().toString(36).substring(7)}@${email.split('@')[1]}`;
+    // Use dot notation for better email validation compatibility
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8); // Letters only, no numbers at start
+    const uniqueAuthEmail = `${email.split('@')[0]}.${randomStr}.${timestamp}@${email.split('@')[1]}`;
 
     // Create auth user with unique email
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -644,6 +648,166 @@ app.post('/api/books/:bookId/likes', async (req, res) => {
   }
 });
 
+// ==================== RECOMMENDATIONS ROUTES ====================
+
+app.get('/api/recommendations', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    // Get user's liked books with catalog info
+    const { data: likesData, error: likesError } = await supabase
+      .from('likes')
+      .select('book_catalog_id')
+      .eq('user_id', userId);
+
+    if (likesError) throw likesError;
+
+    // Get catalog info for liked books
+    const likedCatalogIds = (likesData || []).map(l => l.book_catalog_id).filter(Boolean);
+    let likedBooks = [];
+    if (likedCatalogIds.length > 0) {
+      const { data: catalogData } = await supabase
+        .from('book_catalog')
+        .select('id, genre, age_level, author')
+        .in('id', likedCatalogIds);
+      likedBooks = catalogData || [];
+    }
+
+    // Get user's high-rated reviews with catalog info
+    const { data: reviewsData, error: reviewsError } = await supabase
+      .from('reviews')
+      .select('book_catalog_id, rating')
+      .eq('user_id', userId)
+      .gte('rating', 4);
+
+    if (reviewsError) throw reviewsError;
+
+    // Get catalog info for reviewed books
+    const reviewedCatalogIds = (reviewsData || []).map(r => r.book_catalog_id).filter(Boolean);
+    let highRatedBooks = [];
+    if (reviewedCatalogIds.length > 0) {
+      const { data: catalogData } = await supabase
+        .from('book_catalog')
+        .select('id, genre, age_level, author')
+        .in('id', reviewedCatalogIds);
+      highRatedBooks = catalogData || [];
+    }
+
+    // Extract preferred genres and age levels
+    const preferredGenres = new Map();
+    const preferredAgeLevels = new Map();
+
+    [...likedBooks, ...highRatedBooks].forEach(book => {
+      if (!book) return;
+      
+      if (book.genre) {
+        preferredGenres.set(book.genre, (preferredGenres.get(book.genre) || 0) + 1);
+      }
+      if (book.age_level) {
+        preferredAgeLevels.set(book.age_level, (preferredAgeLevels.get(book.age_level) || 0) + 1);
+      }
+    });
+
+    // Get user's family books (to exclude)
+    const { data: userData } = await supabase
+      .from('users')
+      .select('family_id')
+      .eq('id', userId)
+      .single();
+
+    const familyId = userData?.family_id;
+
+    // Get all book catalog IDs user has interacted with (to exclude from recommendations)
+    const interactedBookCatalogIds = new Set([
+      ...likedCatalogIds,
+      ...reviewedCatalogIds
+    ]);
+
+    // Build recommendation query
+    let query = supabase
+      .from('books_view')
+      .select(`
+        *,
+        families:family_id (
+          id,
+          name,
+          phone,
+          whatsapp
+        )
+      `)
+      .neq('family_id', familyId);
+
+    // If we have preferred genres, filter by them
+    if (preferredGenres.size > 0) {
+      const topGenres = Array.from(preferredGenres.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([genre]) => genre);
+      
+      query = query.in('genre', topGenres);
+    }
+
+    const { data: recommendations, error: recsError } = await query.limit(20);
+
+    if (recsError) throw recsError;
+
+    // Filter out books user has already interacted with (by catalog ID)
+    let filteredRecs = (recommendations || []).filter(
+      book => !interactedBookCatalogIds.has(book.book_catalog_id)
+    );
+
+    // Calculate match scores and reasons
+    const scoredRecs = filteredRecs.map(book => {
+      let score = 0;
+      let reasons = [];
+
+      // Genre match (0-40 points)
+      if (book.genre && preferredGenres.has(book.genre)) {
+        score += 40;
+        reasons.push(`אהבת ספרי ${book.genre}`);
+      }
+
+      // Age level match (0-20 points)
+      if (book.age_range && preferredAgeLevels.has(book.age_range)) {
+        score += 20;
+      }
+
+      // Same author as liked books (0-20 points)
+      const likedAuthors = [...likedBooks, ...highRatedBooks]
+        .map(book => book?.author)
+        .filter(Boolean);
+      
+      if (likedAuthors.includes(book.author)) {
+        score += 20;
+        reasons.push(`אהבת ספרים של ${book.author}`);
+      }
+
+      // Random factor (0-20 points) for diversity
+      score += Math.random() * 20;
+
+      return {
+        ...book,
+        match_percentage: Math.min(100, Math.round(score)),
+        reason: reasons[0] || 'מתאים לטעם שלך'
+      };
+    });
+
+    // Sort by score and take top 12
+    const topRecs = scoredRecs
+      .sort((a, b) => b.match_percentage - a.match_percentage)
+      .slice(0, 12);
+
+    res.json({ recommendations: topRecs });
+  } catch (error) {
+    console.error('Recommendations error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== GENRE MAPPING ROUTES ====================
 
 // Get all genre mappings
@@ -745,6 +909,12 @@ app.post('/api/books/detect-from-image', upload.single('image'), async (req, res
       return res.status(400).json({ error: 'No image provided' });
     }
 
+    // Validate file is an image (in case fileFilter passed it through)
+    if (!req.file.mimetype.startsWith('image/')) {
+      console.error('Non-image file rejected:', req.file.mimetype);
+      return res.status(400).json({ error: 'Only image files are allowed' });
+    }
+
     console.log(`Processing image: ${req.file.originalname}, size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
 
     // Detect books using AI
@@ -837,6 +1007,16 @@ app.post('/api/books/detect-from-image', upload.single('image'), async (req, res
 app.post('/api/books/bulk-add', async (req, res) => {
   try {
     const { books } = req.body;
+    
+    // Validate input first (before auth check)
+    if (!books) {
+      return res.status(400).json({ error: 'No books provided' });
+    }
+    
+    if (!Array.isArray(books) || books.length === 0) {
+      return res.status(400).json({ error: 'No books provided' });
+    }
+    
     const userId = req.headers['x-user-id']; // From auth context
 
     // Get user's family ID
@@ -851,11 +1031,6 @@ app.post('/api/books/bulk-add', async (req, res) => {
     }
 
     const familyId = userData.family_id;
-
-    // Validate input
-    if (!Array.isArray(books) || books.length === 0) {
-      return res.status(400).json({ error: 'No books provided' });
-    }
 
     if (books.length > 50) {
       return res.status(400).json({ error: 'Maximum 50 books per batch' });

@@ -19,6 +19,7 @@ import BookDetails from './pages/BookDetails'
 import EditBook from './pages/EditBook'
 import LoansDashboard from './pages/LoansDashboard'
 import Recommendations from './pages/Recommendations'
+import SearchBooks from './pages/SearchBooks'
 
 // Create RTL cache
 const cacheRtl = createCache({
@@ -45,7 +46,7 @@ function AppRoutes() {
         <Route path="/books/add" element={user ? <AddBook /> : <Navigate to="/login" />} />
         <Route path="/books/:id" element={user ? <BookDetails /> : <Navigate to="/login" />} />
         <Route path="/books/:id/edit" element={user ? <EditBook /> : <Navigate to="/login" />} />
-        <Route path="/search" element={user ? <Home /> : <Navigate to="/login" />} />
+        <Route path="/search" element={user ? <SearchBooks /> : <Navigate to="/login" />} />
         <Route path="/loans" element={user ? <LoansDashboard /> : <Navigate to="/login" />} />
         <Route path="/recommendations" element={user ? <Recommendations /> : <Navigate to="/login" />} />
         <Route path="/family" element={user ? <FamilyDashboard /> : <Navigate to="/login" />} />

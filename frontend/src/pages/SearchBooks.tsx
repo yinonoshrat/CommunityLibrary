@@ -87,6 +87,13 @@ export default function SearchBooks() {
     }
   }, [searchParams]);
 
+  // Re-search when filters change
+  useEffect(() => {
+    if (hasSearched && searchQuery.trim()) {
+      performSearch();
+    }
+  }, [genre, ageLevel, onlyAvailable]);
+
   const performSearch = async (query?: string) => {
     const q = query || searchQuery;
     if (!q.trim()) {

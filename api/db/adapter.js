@@ -77,11 +77,15 @@ export const db = {
     },
 
     delete: async (id) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('families')
         .delete()
         .eq('id', id)
+        .select()
       if (error) throw error
+      if (!data || data.length === 0) {
+        throw new Error('Family not found')
+      }
     },
 
     getMembers: async (familyId) => {
@@ -341,11 +345,16 @@ export const db = {
     delete: async (id) => {
       // Only delete the family_books record
       // Keep the book_catalog entry for other families
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('family_books')
         .delete()
         .eq('id', id)
+        .select()
       if (error) throw error
+      if (!data || data.length === 0) {
+        throw new Error('Book not found')
+      }
+      return data
     },
 
     search: async (searchTerm) => {
@@ -366,13 +375,10 @@ export const db = {
         .from('loans')
         .select(`
           *,
-          family_books!inner(
+          family_books(
             id,
-            book_catalog:book_catalog(title, title_hebrew, author, cover_image_url)
-          ),
-          borrower_family:families!borrower_family_id(name, phone),
-          owner_family:families!owner_family_id(name, phone),
-          requester:users(full_name, email)
+            book_catalog(title, title_hebrew, author, cover_image_url)
+          )
         `)
 
       if (filters.borrowerFamilyId) query = query.eq('borrower_family_id', filters.borrowerFamilyId)
@@ -529,11 +535,16 @@ export const db = {
     },
 
     delete: async (id) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('reviews')
         .delete()
         .eq('id', id)
+        .select()
       if (error) throw error
+      if (!data || data.length === 0) {
+        throw new Error('Review not found')
+      }
+      return data
     }
   },
 
