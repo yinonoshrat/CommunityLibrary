@@ -91,6 +91,12 @@ The backend folder is now a thin wrapper:
 
 ## AI Agent Workflow Guidelines
 
+### Code Quality
+- **Clean imports**: Remove unused imports before completing tasks
+- **TypeScript strict mode**: Ensure no TS errors (unused variables, missing types, etc.)
+- **Run build verification**: After making changes, verify with `npm run build` in the affected directory
+- **ESLint compliance**: Fix linting errors that would block production builds
+
 ### Testing Requirements
 - **For each feature**: Create tests or update existing tests before marking feature complete
 - **After changes**: Always run tests to verify everything works

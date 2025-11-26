@@ -141,22 +141,59 @@ async function searchWithStrategy(title, author, strategy) {
       const volumeInfo = bestMatch.volumeInfo;
       const apiAuthor = volumeInfo.authors?.[0] || '';
 
-      // Preserve original author language if provided and reasonably similar
+      // Preserve original author language if provided
+      // Strongly prefer Hebrew input over English transliterations from API
       let finalAuthor = author || apiAuthor;
       if (author && apiAuthor) {
-        const authorSim = calculateAuthorSimilarity(author, apiAuthor);
-        // If similarity is low, prefer API author (might be more accurate)
-        if (authorSim < 0.5) {
+        const hasHebrew = /[\u0590-\u05FF]/.test(author);
+        const apiHasHebrew = /[\u0590-\u05FF]/.test(apiAuthor);
+        
+        if (hasHebrew && !apiHasHebrew) {
+          // Input is Hebrew, API is not - always prefer Hebrew
+          finalAuthor = author;
+          console.log(`  Preserving Hebrew author "${author}" over API "${apiAuthor}"`);
+        } else if (!hasHebrew && apiHasHebrew) {
+          // Input is not Hebrew, API is - prefer API
           finalAuthor = apiAuthor;
-          console.log(`  Using API author "${apiAuthor}" instead of input "${author}" (low similarity: ${Math.round(authorSim * 100)}%)`);
+          console.log(`  Using Hebrew API author "${apiAuthor}" over input "${author}"`);
         } else {
-          console.log(`  Preserving input author "${author}" (similarity: ${Math.round(authorSim * 100)}%)`);
+          // Both same script - check similarity
+          const authorSim = calculateAuthorSimilarity(author, apiAuthor);
+          if (authorSim < 0.5) {
+            finalAuthor = apiAuthor;
+            console.log(`  Using API author "${apiAuthor}" instead of input "${author}" (low similarity: ${Math.round(authorSim * 100)}%)`);
+          } else {
+            console.log(`  Preserving input author "${author}" (similarity: ${Math.round(authorSim * 100)}%)`);
+          }
         }
+      }
+
+      // Preserve Hebrew title if provided
+      const apiTitle = volumeInfo.title || title;
+      let finalTitle = title;
+      if (title && volumeInfo.title) {
+        const hasHebrewTitle = /[\u0590-\u05FF]/.test(title);
+        const apiHasHebrewTitle = /[\u0590-\u05FF]/.test(volumeInfo.title);
+        
+        if (!hasHebrewTitle && apiHasHebrewTitle) {
+          // Input is not Hebrew but API has Hebrew - prefer API
+          finalTitle = volumeInfo.title;
+          console.log(`  Using Hebrew API title "${volumeInfo.title}" over input "${title}"`);
+        } else if (hasHebrewTitle) {
+          // Input is Hebrew - prefer it
+          finalTitle = title;
+          console.log(`  Preserving Hebrew title "${title}"`);
+        } else {
+          // Both non-Hebrew or API has no title - use API if available
+          finalTitle = volumeInfo.title || title;
+        }
+      } else {
+        finalTitle = apiTitle;
       }
 
       // Extract book details
       const bookDetails = {
-        title: volumeInfo.title || title,
+        title: finalTitle,
         author: finalAuthor,
         publisher: volumeInfo.publisher || null,
         publish_year: volumeInfo.publishedDate ? parseInt(volumeInfo.publishedDate.substring(0, 4)) : null,
