@@ -224,7 +224,7 @@ export default function FamilyMembers() {
         <Button
           variant="contained"
           startIcon={<Add />}
-          onClick={() => setOpenAddDialog(true)}
+          onClick={handleOpenAddDialog}
         >
           הוסף חבר משפחה
         </Button>

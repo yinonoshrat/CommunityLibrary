@@ -87,12 +87,20 @@ VALUES (
 
 ### Step 4: Configure Vercel (10 minutes)
 
-1. Go to https://vercel.com/dashboard
-2. Select your `community-library` project
-3. Go to **Settings → Git**
-   - Set **Production Branch** to: `production`
-   - This makes all other branches (including `main`) deploy to preview
-4. Go to **Settings → Environment Variables**
+1. **Set GitHub Default Branch:**
+   - Go to your GitHub repository: https://github.com/yinonoshrat/CommunityLibrary
+   - Click **Settings** (repository settings, not your profile)
+   - In the left sidebar, click **Branches**
+   - Under "Default branch", click the ↔️ switch icon
+   - Select `production` from the dropdown
+   - Click **Update** and confirm
+   - ⚠️ **This makes `production` deploy to your main domain (communitylibrary.vercel.app)**
+   - All other branches (including `main`) will deploy as previews
+
+2. **Configure Vercel Environment Variables:**
+   - Go to https://vercel.com/dashboard
+   - Select your `community-library` project
+   - Go to **Settings → Environment Variables**
 
 **For Production Environment:**
 - Click **Add New**
