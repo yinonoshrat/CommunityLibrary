@@ -1,0 +1,72 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6] [cursor=pointer]: ספריה קהילתית
+      - generic [ref=e7]:
+        - button "התחבר" [ref=e8] [cursor=pointer]
+        - button "הירשם" [ref=e9] [cursor=pointer]
+  - main [ref=e10]:
+    - generic [ref=e13]:
+      - heading "הרשמה לספרייה הקהילתית" [level=1] [ref=e14]
+      - generic [ref=e15]:
+        - generic [ref=e17]:
+          - img [ref=e19]: "1"
+          - generic [ref=e22]: פרטים אישיים
+        - generic [ref=e26]:
+          - img [ref=e28]: "2"
+          - generic [ref=e31]: פרטי משפחה
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - generic:
+            - text: שם מלא
+            - generic: "*"
+          - generic [ref=e34]:
+            - textbox "שם מלא" [ref=e35]
+            - group:
+              - generic: שם מלא *
+        - generic [ref=e36]:
+          - generic:
+            - text: אימייל
+            - generic: "*"
+          - generic [ref=e37]:
+            - textbox "אימייל" [ref=e38]
+            - group:
+              - generic: אימייל *
+        - generic [ref=e39]:
+          - generic:
+            - text: סיסמה
+            - generic: "*"
+          - generic [ref=e40]:
+            - textbox "סיסמה" [ref=e41]
+            - group:
+              - generic: סיסמה *
+          - paragraph [ref=e42]: לפחות 6 תווים
+        - generic [ref=e43]:
+          - generic:
+            - text: אימות סיסמה
+            - generic: "*"
+          - generic [ref=e44]:
+            - textbox "אימות סיסמה" [ref=e45]
+            - group:
+              - generic: אימות סיסמה *
+        - generic [ref=e46]:
+          - generic: טלפון
+          - generic [ref=e47]:
+            - textbox "טלפון" [ref=e48]
+            - group:
+              - generic: טלפון
+          - paragraph [ref=e49]: לתקשורת עם משפחות אחרות
+        - generic [ref=e50]:
+          - generic: ווטסאפ
+          - generic [ref=e51]:
+            - textbox "ווטסאפ" [ref=e52]
+            - group:
+              - generic: ווטסאפ
+          - paragraph [ref=e53]: אם שונה ממספר הטלפון
+      - button "המשך" [ref=e55] [cursor=pointer]
+      - link "כבר יש לך חשבון? התחבר כאן" [ref=e57] [cursor=pointer]:
+        - /url: /login
+```

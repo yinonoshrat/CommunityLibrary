@@ -168,6 +168,7 @@ export default function Home() {
           }}
         >
           <Autocomplete
+            data-testid="search-autocomplete"
             fullWidth
             freeSolo
             options={suggestions}
@@ -263,6 +264,7 @@ export default function Home() {
             )}
           />
           <Button
+            data-testid="search-submit-button"
             type="submit"
             variant="contained"
             size="medium"
@@ -275,6 +277,7 @@ export default function Home() {
         
         <Box sx={{ maxWidth: 800, mx: 'auto', mt: 2, textAlign: 'center' }}>
           <Button
+            data-testid="recommendations-button"
             variant="outlined"
             size="medium"
             startIcon={<StarsIcon />}
@@ -286,7 +289,7 @@ export default function Home() {
       </Box>
 
       {/* Current Loan Status */}
-      <Box mb={4}>
+      <Box mb={4} data-testid="loan-status-section">
         <Typography variant="h6" gutterBottom>
           סטטוס השאלות
         </Typography>
@@ -299,7 +302,7 @@ export default function Home() {
             <CardContent>
               <Grid container spacing={3}>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Box display="flex" alignItems="center" gap={2}>
+                  <Box display="flex" alignItems="center" gap={2} data-testid="books-lent-card">
                     <Box
                       sx={{
                         p: 1.5,
@@ -319,7 +322,7 @@ export default function Home() {
                   </Box>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Box display="flex" alignItems="center" gap={2}>
+                  <Box display="flex" alignItems="center" gap={2} data-testid="books-borrowed-card">
                     <Box
                       sx={{
                         p: 1.5,
@@ -352,7 +355,7 @@ export default function Home() {
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, sm: 4 }}>
             <Card
-              data-testid="management-card"
+              data-testid="books-management-card"
               sx={{
                 height: '100%',
                 cursor: 'pointer',
@@ -379,7 +382,7 @@ export default function Home() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <Card
-              data-testid="management-card"
+              data-testid="loans-management-card"
               sx={{
                 height: '100%',
                 cursor: 'pointer',
@@ -406,7 +409,7 @@ export default function Home() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <Card
-              data-testid="management-card"
+              data-testid="family-management-card"
               sx={{
                 height: '100%',
                 cursor: 'pointer',

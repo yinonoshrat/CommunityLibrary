@@ -1801,5 +1801,490 @@ When implementing each phase, refer back to:
 
 ---
 
-*Last Updated: November 24, 2025*
-*Version: 1.0*
+## 🔮 Future Tasks and Improvements
+
+### High Priority
+
+#### 1. Environment Separation
+**Goal:** Create completely separate development and production environments
+
+**Tasks:**
+- [ ] Create separate Vercel projects for dev and prod
+- [ ] Set up separate Supabase databases:
+  - `community-library-dev` - Development database
+  - `community-library-prod` - Production database
+- [ ] Configure local development to use dev database
+- [ ] Update `.env.development.local` to point to dev database
+- [ ] Update Vercel production environment variables to use prod database
+- [ ] Document environment-specific configurations
+- [ ] Add database migration workflow for both environments
+- [ ] Set up separate API keys for each environment (Gemini, OpenAI, etc.)
+
+**Benefits:**
+- Safe testing without affecting production data
+- Isolated environments prevent accidental data corruption
+- Different API quotas and rate limits per environment
+- Ability to test breaking changes safely
+
+---
+
+#### 2. E2E Tests Environment Configuration
+**Goal:** Enable running E2E tests on both local and Vercel deployments
+
+**Tasks:**
+- [ ] Add environment variable `TEST_ENV` (values: `local`, `dev`, `prod`)
+- [ ] Create `playwright.config.local.ts` - Tests against `http://localhost:5174`
+- [ ] Create `playwright.config.dev.ts` - Tests against Vercel dev deployment
+- [ ] Update test scripts in `package.json`:
+  ```json
+  {
+    "test:e2e:local": "playwright test --config=playwright.config.local.ts",
+    "test:e2e:dev": "playwright test --config=playwright.config.dev.ts",
+    "test:e2e:ci": "playwright test --config=playwright.config.dev.ts --reporter=github"
+  }
+  ```
+- [ ] Configure separate test data fixtures for each environment
+- [ ] Add GitHub Actions workflow to run E2E tests on dev deployment
+- [ ] Document how to run tests against different environments
+- [ ] Add test cleanup scripts to reset test data
+
+**Benefits:**
+- Test on actual Vercel infrastructure before production
+- Catch deployment-specific issues (serverless, edge functions)
+- CI/CD pipeline validates changes before merge
+- Local testing remains fast and independent
+
+---
+
+#### 3. Backend Refactoring - Route Organization
+**Goal:** Extract route logic from `api/index.js` into modular, maintainable files
+
+**Current Structure (Problem):**
+```
+api/
+  index.js (677 lines - contains ALL routes and logic)
+  db/
+    adapter.js
+  services/
+    geminiVision.js
+```
+
+**Target Structure:**
+```
+api/
+  index.js (main server setup, middleware, ~50 lines)
+  routes/
+    auth.routes.js
+    families.routes.js
+    users.routes.js
+    books.routes.js
+    loans.routes.js
+    reviews.routes.js
+    likes.routes.js
+    recommendations.routes.js
+    bulkUpload.routes.js
+  controllers/
+    auth.controller.js
+    books.controller.js
+    loans.controller.js
+    ...
+  services/
+    geminiVision.js
+    bookSearch.js
+    recommendations.js
+  middleware/
+    auth.middleware.js
+    validation.middleware.js
+    errorHandler.middleware.js
+  db/
+    adapter.js
+```
+
+**Tasks:**
+- [ ] Create `api/routes/` directory
+- [ ] Create `api/controllers/` directory
+- [ ] Extract authentication routes to `auth.routes.js` + `auth.controller.js`
+- [ ] Extract books routes to `books.routes.js` + `books.controller.js`
+- [ ] Extract loans routes to `loans.routes.js` + `loans.controller.js`
+- [ ] Extract families routes to `families.routes.js` + `families.controller.js`
+- [ ] Extract users routes to `users.routes.js` + `users.controller.js`
+- [ ] Extract reviews routes to `reviews.routes.js` + `reviews.controller.js`
+- [ ] Extract likes routes to `likes.routes.js` + `likes.controller.js`
+- [ ] Extract recommendations routes to `recommendations.routes.js` + `recommendations.controller.js`
+- [ ] Extract bulk upload routes to `bulkUpload.routes.js` + `bulkUpload.controller.js`
+- [ ] Move authentication middleware to `middleware/auth.middleware.js`
+- [ ] Create validation middleware in `middleware/validation.middleware.js`
+- [ ] Create centralized error handler in `middleware/errorHandler.middleware.js`
+- [ ] Update `api/index.js` to import and use routes:
+  ```javascript
+  import authRoutes from './routes/auth.routes.js'
+  import booksRoutes from './routes/books.routes.js'
+  // ...
+  
+  app.use('/api/auth', authRoutes)
+  app.use('/api/books', booksRoutes)
+  // ...
+  ```
+- [ ] Add JSDoc comments to all controllers
+- [ ] Create unit tests for each controller
+- [ ] Update documentation with new structure
+
+**Example Structure:**
+```javascript
+// api/routes/books.routes.js
+import express from 'express'
+import { authenticateUser } from '../middleware/auth.middleware.js'
+import { validateBook } from '../middleware/validation.middleware.js'
+import * as booksController from '../controllers/books.controller.js'
+
+const router = express.Router()
+
+router.get('/', booksController.getAllBooks)
+router.get('/search', booksController.searchBooks)
+router.get('/:id', booksController.getBookById)
+router.post('/', authenticateUser, validateBook, booksController.createBook)
+router.put('/:id', authenticateUser, validateBook, booksController.updateBook)
+router.delete('/:id', authenticateUser, booksController.deleteBook)
+
+export default router
+```
+
+```javascript
+// api/controllers/books.controller.js
+import { db } from '../db/adapter.js'
+
+/**
+ * Get all books with optional filters
+ * @route GET /api/books
+ */
+export async function getAllBooks(req, res) {
+  try {
+    const { familyId, status, title, author, genre, series } = req.query
+    const books = await db.books.getAll({
+      familyId, status, title, author, genre, series
+    })
+    res.json({ books })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+}
+
+// ... other controller functions
+```
+
+**Benefits:**
+- **Maintainability:** Each route group in separate file (~100-200 lines)
+- **Testability:** Controllers can be unit tested independently
+- **Readability:** Clear separation of concerns (routing, logic, validation)
+- **Scalability:** Easy to add new routes without modifying massive file
+- **Collaboration:** Multiple developers can work on different route files
+- **Reusability:** Controllers can be shared across different route configurations
+
+---
+
+### Medium Priority
+
+#### 4. Frontend Refactoring
+
+##### 4.1 API Access Layer
+**Goal:** Centralize all API calls in a dedicated service layer
+
+**Current Problem:**
+- Fetch calls scattered across components
+- Duplicate error handling logic
+- No centralized token management
+- Hard to mock for testing
+
+**Target Structure:**
+```
+frontend/src/
+  services/
+    api/
+      apiClient.ts          # Base HTTP client (axios/fetch wrapper)
+      auth.api.ts           # Authentication API calls
+      books.api.ts          # Books API calls
+      loans.api.ts          # Loans API calls
+      families.api.ts       # Families API calls
+      users.api.ts          # Users API calls
+      reviews.api.ts        # Reviews API calls
+      likes.api.ts          # Likes API calls
+      recommendations.api.ts # Recommendations API calls
+  hooks/
+    useApi.ts              # Custom hook for API calls with loading/error states
+```
+
+**Tasks:**
+- [ ] Install `axios` for better HTTP client: `npm install axios`
+- [ ] Create `apiClient.ts` with base configuration:
+  ```typescript
+  import axios from 'axios'
+  
+  const apiClient = axios.create({
+    baseURL: '/api',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+  
+  // Add token to all requests
+  apiClient.interceptors.request.use((config) => {
+    const token = localStorage.getItem('auth_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  })
+  
+  // Handle errors globally
+  apiClient.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response?.status === 401) {
+        // Redirect to login
+        window.location.href = '/login'
+      }
+      return Promise.reject(error)
+    }
+  )
+  
+  export default apiClient
+  ```
+- [ ] Create API service files for each resource
+- [ ] Create `useApi` hook for components:
+  ```typescript
+  export function useApi<T>(apiCall: () => Promise<T>) {
+    const [data, setData] = useState<T | null>(null)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    
+    const execute = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const result = await apiCall()
+        setData(result)
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    return { data, loading, error, execute }
+  }
+  ```
+- [ ] Migrate all components to use API services
+- [ ] Remove all direct `fetch` calls from components
+- [ ] Add TypeScript types for all API responses
+- [ ] Add retry logic for failed requests
+- [ ] Add request cancellation for unmounted components
+
+**Example Usage:**
+```typescript
+// Before (in component)
+const [books, setBooks] = useState([])
+const [loading, setLoading] = useState(false)
+
+useEffect(() => {
+  setLoading(true)
+  fetch('/api/books')
+    .then(res => res.json())
+    .then(data => setBooks(data.books))
+    .catch(err => console.error(err))
+    .finally(() => setLoading(false))
+}, [])
+
+// After (in component)
+import { booksApi } from '@/services/api/books.api'
+import { useApi } from '@/hooks/useApi'
+
+const { data: books, loading, error } = useApi(() => booksApi.getAll())
+```
+
+**Benefits:**
+- Single source of truth for API endpoints
+- Centralized error handling and retry logic
+- Easier to mock for testing
+- Type-safe API calls with TypeScript
+- Consistent loading and error states
+
+---
+
+##### 4.2 State Management with Local Caching
+**Goal:** Implement client-side caching to reduce redundant API calls
+
+**Current Problem:**
+- Every component refetches same data
+- No data persistence between page navigations
+- Slow user experience with frequent loading states
+- Excessive API calls waste bandwidth and server resources
+
+**Recommended Solution: TanStack Query (React Query)**
+
+**Why TanStack Query:**
+- ✅ Industry standard for React data fetching
+- ✅ Built-in caching and background refetching
+- ✅ Automatic stale-while-revalidate pattern
+- ✅ Optimistic updates
+- ✅ TypeScript support
+- ✅ DevTools for debugging
+- ✅ Minimal boilerplate
+
+**Tasks:**
+- [ ] Install TanStack Query: `npm install @tanstack/react-query @tanstack/react-query-devtools`
+- [ ] Set up QueryClient in `main.tsx`:
+  ```typescript
+  import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+  import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+  
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 5 * 60 * 1000, // 5 minutes
+        cacheTime: 10 * 60 * 1000, // 10 minutes
+        refetchOnWindowFocus: false,
+        retry: 1
+      }
+    }
+  })
+  
+  root.render(
+    <QueryClientProvider client={queryClient}>
+      <App />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  )
+  ```
+- [ ] Create custom hooks for each resource:
+  ```typescript
+  // hooks/queries/useBooks.ts
+  import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+  import { booksApi } from '@/services/api/books.api'
+  
+  export function useBooks(filters?: BookFilters) {
+    return useQuery({
+      queryKey: ['books', filters],
+      queryFn: () => booksApi.getAll(filters)
+    })
+  }
+  
+  export function useBook(id: string) {
+    return useQuery({
+      queryKey: ['books', id],
+      queryFn: () => booksApi.getById(id),
+      enabled: !!id
+    })
+  }
+  
+  export function useCreateBook() {
+    const queryClient = useQueryClient()
+    
+    return useMutation({
+      mutationFn: booksApi.create,
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['books'] })
+      }
+    })
+  }
+  
+  export function useUpdateBook() {
+    const queryClient = useQueryClient()
+    
+    return useMutation({
+      mutationFn: ({ id, data }) => booksApi.update(id, data),
+      onSuccess: (_, { id }) => {
+        queryClient.invalidateQueries({ queryKey: ['books'] })
+        queryClient.invalidateQueries({ queryKey: ['books', id] })
+      }
+    })
+  }
+  ```
+- [ ] Create similar hooks for: loans, families, users, reviews, likes, recommendations
+- [ ] Migrate all components to use query hooks
+- [ ] Configure cache invalidation strategies:
+  - Invalidate books cache when adding/editing/deleting book
+  - Invalidate loans cache when creating/returning loan
+  - Invalidate recommendations cache when liking book
+- [ ] Add optimistic updates for instant UI feedback
+- [ ] Configure background refetching for frequently changing data
+- [ ] Add prefetching for predictable navigation patterns
+
+**Example Usage:**
+```typescript
+// Before (in component)
+const [books, setBooks] = useState([])
+const [loading, setLoading] = useState(false)
+
+useEffect(() => {
+  setLoading(true)
+  booksApi.getAll()
+    .then(setBooks)
+    .finally(() => setLoading(false))
+}, [])
+
+// After (in component)
+import { useBooks } from '@/hooks/queries/useBooks'
+
+function MyBooks() {
+  const { data: books, isLoading, error } = useBooks({ familyId: user.familyId })
+  
+  if (isLoading) return <Loading />
+  if (error) return <Error message={error.message} />
+  
+  return <BooksList books={books} />
+}
+```
+
+**Caching Strategy by Data Type:**
+
+| Data Type | Stale Time | Refetch Strategy | Reason |
+|-----------|------------|------------------|--------|
+| User Profile | 10 min | On login | Rarely changes |
+| Books Catalog | 5 min | On mutation | Changes frequently |
+| Loans | 2 min | On mutation + interval | Needs to be fresh |
+| Reviews | 5 min | On mutation | Medium frequency |
+| Likes | 5 min | On mutation | Medium frequency |
+| Recommendations | 30 min | Manual refresh | Expensive to compute |
+| Families | 10 min | On mutation | Rarely changes |
+| Search Results | 1 min | On search | Should be fresh |
+
+**Benefits:**
+- ⚡ **Performance:** Data cached in memory, instant page loads
+- 🔄 **Smart Refetching:** Automatic background updates keep data fresh
+- 📶 **Offline Support:** Works with cached data when offline
+- 🎯 **Optimistic Updates:** Instant UI feedback before server responds
+- 🐛 **Easier Debugging:** DevTools show cache state and queries
+- 📉 **Reduced API Calls:** 70-90% reduction in redundant requests
+- 🧪 **Testability:** Easy to mock query responses
+- 🚀 **Better UX:** No loading spinners for cached data
+
+---
+
+## 📝 Implementation Priority Order
+
+1. **Environment Separation** (1-2 days)
+   - Critical for safe development
+   - Should be done before adding more features
+
+2. **Backend Refactoring** (2-3 days)
+   - Makes future development faster
+   - Improves code quality and maintainability
+
+3. **Frontend API Layer** (1-2 days)
+   - Foundation for state management
+   - Immediate improvement in code quality
+
+4. **State Management** (2-3 days)
+   - Biggest UX improvement
+   - Reduces server load
+
+5. **E2E Test Configuration** (1 day)
+   - Enables testing on Vercel
+   - Completes testing infrastructure
+
+**Total Estimated Time:** 7-11 days
+
+---
+
+*Last Updated: November 27, 2025*
+*Version: 1.1*
