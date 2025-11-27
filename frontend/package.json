@@ -14,8 +14,6 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "typescript": "~5.9.3",
-    "vite": "^6.0.11",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
@@ -23,18 +21,20 @@
     "@mui/icons-material": "^7.3.5",
     "@mui/material": "^7.3.5",
     "@supabase/supabase-js": "^2.84.0",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@types/stylis": "^4.2.7",
+    "@vitejs/plugin-react": "^5.1.1",
     "multer": "^2.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
     "stylis": "^4.3.6",
-    "stylis-plugin-rtl": "^2.1.1"
+    "stylis-plugin-rtl": "^2.1.1",
+    "typescript": "~5.9.3",
+    "vite": "^6.0.11"
   },
   "devDependencies": {
-    "@playwright/test": "^1.56.1",
-    "@types/react": "^19.2.6",
-    "@types/react-dom": "^19.2.3",
-    "@types/stylis": "^4.2.7",
-    "@vitejs/plugin-react": "^5.1.1"
+    "@playwright/test": "^1.56.1"
   }
 }
