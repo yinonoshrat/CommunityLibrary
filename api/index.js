@@ -10,6 +10,18 @@ import { searchBookDetails } from './services/bookSearch.js';
 
 const app = express();
 
+// Environment detection
+const environment = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
+const dbUrl = process.env.SUPABASE_URL || process.env.POSTGRES_URL || '';
+const dbIdentifier = dbUrl.includes('supabase.co') 
+  ? dbUrl.split('//')[1]?.split('.')[0] || 'unknown'
+  : 'unknown';
+
+console.log('='.repeat(60));
+console.log(`🚀 API starting in ${environment.toUpperCase()} environment`);
+console.log(`📊 Database: ${dbIdentifier}`);
+console.log('='.repeat(60));
+
 // Initialize AI Vision Service (priority order: Hybrid > OpenAI > Gemini)
 let aiVisionService = null;
 let serviceName = 'none';
@@ -92,7 +104,13 @@ app.use(async (req, res, next) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Community Library API is running' });
+  res.json({ 
+    status: 'ok', 
+    message: 'Community Library API is running',
+    environment: environment,
+    database: dbIdentifier,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // ==================== AUTH ROUTES ====================
