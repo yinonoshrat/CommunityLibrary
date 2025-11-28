@@ -15,5 +15,6 @@
       "main": true,
       "production": true
     }
-  }
+  },
+  "alias": ["dev.communitylibrary.com"]
 }

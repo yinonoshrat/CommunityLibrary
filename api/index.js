@@ -316,6 +316,50 @@ app.get('/api/families/:id', async (req, res) => {
   }
 });
 
+// Check for families with the same name
+app.post('/api/families/check-name', async (req, res) => {
+  try {
+    const { name } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Family name is required' });
+    }
+
+    // Find families with matching name using db adapter
+    const allFamilies = await db.families.getAll();
+    const matchingFamilies = allFamilies.filter(f => 
+      f.name.toLowerCase() === name.toLowerCase()
+    );
+
+    // Get members for each matching family
+    const familiesWithMembers = await Promise.all(
+      matchingFamilies.map(async (family) => {
+        try {
+          const members = await db.families.getMembers(family.id);
+          return {
+            ...family,
+            members: members.map(m => ({ id: m.id, full_name: m.full_name }))
+          };
+        } catch (err) {
+          console.error('Error getting members for family:', family.id, err);
+          return {
+            ...family,
+            members: []
+          };
+        }
+      })
+    );
+
+    res.json({ 
+      exists: familiesWithMembers.length > 0,
+      families: familiesWithMembers 
+    });
+  } catch (error) {
+    console.error('Check family name error:', error);
+    res.status(500).json({ error: error.message || 'Failed to check family name' });
+  }
+});
+
 app.post('/api/families', async (req, res) => {
   try {
     const family = await db.families.create(req.body);

@@ -128,12 +128,30 @@ The backend folder is now a thin wrapper:
 
 ### Current Setup: Supabase (Postgres)
 - **Database**: Supabase Postgres (connection details in `.env.development.local`)
+- **Authentication**: Supabase Auth with multiple providers
 - **Environment variables** available:
   - `POSTGRES_URL` - Connection string with pooler (recommended for serverless)
   - `POSTGRES_URL_NON_POOLING` - Direct connection (for migrations/admin tasks)
   - `SUPABASE_URL` - Supabase API endpoint
   - `SUPABASE_ANON_KEY` - Public API key for client-side
   - `SUPABASE_SERVICE_ROLE_KEY` - Admin key for server-side operations
+
+### Authentication Strategy
+- **Primary Auth**: Supabase Auth handles user authentication
+- **Multiple Providers Supported**:
+  - **Email/Password**: Traditional email login (multiple users can share same email)
+  - **Google OAuth**: Sign in with Google account
+  - **Facebook OAuth**: Sign in with Facebook account
+- **User Management**: 
+  - Each user has unique `auth_id` from Supabase Auth (regardless of provider)
+  - Users table links to `auth.users` via `auth_id` (foreign key)
+  - Email field can be non-unique to support multiple users per email
+  - Family association allows multiple family members with same email
+- **Implementation Requirements**:
+  - Configure OAuth providers in Supabase Dashboard → Authentication → Providers
+  - Add authorized redirect URLs for each environment (local, dev, production)
+  - Frontend uses `@supabase/supabase-js` client for OAuth flows
+  - Backend verifies JWT tokens from Supabase Auth
 
 ### Database Abstraction Pattern
 To allow easy database switching in the future:
