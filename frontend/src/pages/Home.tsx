@@ -15,7 +15,6 @@ import {
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  SwapHoriz as SwapIcon,
   People as PeopleIcon,
   LibraryBooks,
   TrendingUp,
@@ -136,8 +135,12 @@ export default function Home() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // Navigate to search page even with empty query
-    navigate(`/search?q=${encodeURIComponent(searchQuery)}`);
+    const params = new URLSearchParams();
+    params.set('view', 'all');
+    if (searchQuery.trim()) {
+      params.set('q', searchQuery.trim());
+    }
+    navigate({ pathname: '/books', search: params.toString() });
   };
 
   const handleSelectBook = (book: BookSuggestion | null) => {
@@ -302,7 +305,14 @@ export default function Home() {
             <CardContent>
               <Grid container spacing={3}>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Box display="flex" alignItems="center" gap={2} data-testid="books-lent-card">
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={2}
+                    data-testid="books-lent-card"
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => navigate('/books?view=my&status=on_loan')}
+                  >
                     <Box
                       sx={{
                         p: 1.5,
@@ -322,7 +332,14 @@ export default function Home() {
                   </Box>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Box display="flex" alignItems="center" gap={2} data-testid="books-borrowed-card">
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={2}
+                    data-testid="books-borrowed-card"
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => navigate('/books?view=borrowed')}
+                  >
                     <Box
                       sx={{
                         p: 1.5,
@@ -375,33 +392,6 @@ export default function Home() {
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     הוסף, ערוך ומחק ספרים מהקטלוג המשפחתי
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <Card
-              data-testid="loans-management-card"
-              sx={{
-                height: '100%',
-                cursor: 'pointer',
-                transition: 'transform 0.2s, box-shadow 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: 4,
-                },
-              }}
-              onClick={() => navigate('/loans')}
-            >
-              <CardContent>
-                <Box display="flex" flexDirection="column" alignItems="center" textAlign="center">
-                  <SwapIcon sx={{ fontSize: 48, color: 'warning.main', mb: 2 }} />
-                  <Typography variant="h6" gutterBottom>
-                    ניהול השאלות
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    נהל בקשות השאלה ועקוב אחרי ספרים מושאלים
                   </Typography>
                 </Box>
               </CardContent>

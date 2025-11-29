@@ -1,84 +1,120 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react'
 import {
   Container,
   Typography,
   Box,
-  Tabs,
-  Tab,
   CircularProgress,
-  Alert
-} from '@mui/material';
-import LoanCard from '../components/LoanCard';
-import ReturnBookDialog from '../components/ReturnBookDialog';
-import { useAuth } from '../contexts/AuthContext';
+  Alert,
+  Grid,
+} from '@mui/material'
+import { useAuth } from '../contexts/AuthContext'
+import CatalogBookCard from '../components/CatalogBookCard'
+import type { CatalogBook } from '../types'
 
-interface Loan {
-  id: string;
-  status: string;
-  request_date?: string;
-  actual_return_date?: string;
-  notes?: string;
+interface LoanRecord {
+  id: string
+  status: string
+  family_book_id: string
+  borrower_family_id: string
+  owner_family_id: string
+  request_date?: string
+  actual_return_date?: string
   family_books?: {
     book_catalog: {
-      title?: string;
-      title_hebrew?: string;
-      author?: string;
-      author_hebrew?: string;
-      cover_image_url?: string;
-    };
-  };
-  books?: {
-    title?: string;
-    title_hebrew?: string;
-    author?: string;
-    author_hebrew?: string;
-    cover_image_url?: string;
-  };
+      title?: string
+      title_hebrew?: string
+      author?: string
+      author_hebrew?: string
+      cover_image_url?: string
+      genre?: string
+      age_range?: string
+    }
+  }
   borrower_family?: {
-    name: string;
-    phone: string;
-    whatsapp?: string;
-  };
+    id: string
+    name: string
+    phone?: string
+    whatsapp?: string
+  }
   owner_family?: {
-    name: string;
-    phone: string;
-    whatsapp?: string;
-  };
+    id: string
+    name: string
+    phone?: string
+    whatsapp?: string
+  }
 }
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
+const dateFormatter = new Intl.DateTimeFormat('he-IL', { dateStyle: 'medium' })
+
+const formatDate = (value?: string) => {
+  if (!value) return 'תאריך לא זמין'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'תאריך לא ידוע'
+  return dateFormatter.format(date)
 }
 
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
+const toCatalogBook = (loan: LoanRecord, viewerFamilyId: string | null): CatalogBook => {
+  const bookInfo = loan.family_books?.book_catalog || {}
+  const viewerIsOwner = viewerFamilyId === loan.owner_family_id
+  const viewerIsBorrower = viewerFamilyId === loan.borrower_family_id
 
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`loans-tabpanel-${index}`}
-      aria-labelledby={`loans-tab-${index}`}
-      {...other}
-    >
-      {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
-    </div>
-  );
+  return {
+    catalogId: loan.family_book_id || loan.id,
+    title: bookInfo.title || bookInfo.title_hebrew,
+    titleHebrew: bookInfo.title_hebrew,
+    author: bookInfo.author || bookInfo.author_hebrew,
+    authorHebrew: bookInfo.author_hebrew,
+    genre: bookInfo.genre,
+    ageRange: bookInfo.age_range,
+    coverImageUrl: bookInfo.cover_image_url,
+    stats: {
+      totalCopies: 1,
+      availableCopies: 1,
+      onLoanCopies: 0,
+    },
+    owners: [
+      {
+        familyBookId: loan.family_book_id,
+        status: 'returned',
+        condition: null,
+        notes: null,
+        familyId: loan.owner_family_id,
+        family: loan.owner_family || null,
+        loan: null,
+        isViewerOwner: viewerIsOwner,
+      },
+    ],
+    viewerContext: {
+      owns: viewerIsOwner,
+      borrowed: viewerIsBorrower,
+      ownedCopies: viewerIsOwner
+        ? [
+            {
+              familyBookId: loan.family_book_id,
+              status: 'returned',
+              loan: null,
+            },
+          ]
+        : [],
+      borrowedLoan: undefined,
+    },
+  }
+}
+
+const getHistoryLabel = (loan: LoanRecord, viewerFamilyId: string | null) => {
+  const actedAsOwner = viewerFamilyId === loan.owner_family_id
+  const counterparty = actedAsOwner ? loan.borrower_family?.name : loan.owner_family?.name
+  const prefix = actedAsOwner ? 'השאלתם ל' : 'שאלתם מ'
+  const base = `${prefix}${counterparty || 'משפחה'} · הושאל ב-${formatDate(loan.request_date)}`
+  return loan.actual_return_date ? `${base} · הוחזר ב-${formatDate(loan.actual_return_date)}` : base
 }
 
 export default function LoansDashboard() {
-  const { user } = useAuth();
-  const [tabValue, setTabValue] = useState(0);
-  const [lentLoans, setLentLoans] = useState<Loan[]>([]);
-  const [borrowedLoans, setBorrowedLoans] = useState<Loan[]>([]);
-  const [historyLoans, setHistoryLoans] = useState<Loan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
-  const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
-  const [familyId, setFamilyId] = useState<string | null>(null);
+  const { user } = useAuth()
+  const [historyLoans, setHistoryLoans] = useState<LoanRecord[]>([])
+  const [familyId, setFamilyId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   // Fetch family ID from user profile
   useEffect(() => {
@@ -107,80 +143,48 @@ export default function LoansDashboard() {
     fetchUserProfile();
   }, [user]);
 
-  const fetchLoans = useCallback(async () => {
-    if (!familyId) return;
+  const fetchHistory = async () => {
+    if (!familyId) return
 
-    setLoading(true);
-    setError('');
+    setLoading(true)
+    setError('')
 
     try {
-      // Fetch books we lent out (active)
-      const lentResponse = await fetch(
-        `/api/loans?ownerFamilyId=${familyId}&status=active`
-      );
-      const lentData = await lentResponse.json();
+      const [ownerResponse, borrowerResponse] = await Promise.all([
+        fetch(`/api/loans?ownerFamilyId=${familyId}&status=returned`),
+        fetch(`/api/loans?borrowerFamilyId=${familyId}&status=returned`),
+      ])
 
-      // Fetch books we borrowed (active)
-      const borrowedResponse = await fetch(
-        `/api/loans?borrowerFamilyId=${familyId}&status=active`
-      );
-      const borrowedData = await borrowedResponse.json();
+      const ownerData = await ownerResponse.json()
+      const borrowerData = await borrowerResponse.json()
 
-      // Fetch history (returned loans - both lent and borrowed)
-      const historyLentResponse = await fetch(
-        `/api/loans?ownerFamilyId=${familyId}&status=returned`
-      );
-      const historyLentData = await historyLentResponse.json();
-
-      const historyBorrowedResponse = await fetch(
-        `/api/loans?borrowerFamilyId=${familyId}&status=returned`
-      );
-      const historyBorrowedData = await historyBorrowedResponse.json();
-
-      if (lentResponse.ok && borrowedResponse.ok) {
-        setLentLoans(lentData.loans || []);
-        setBorrowedLoans(borrowedData.loans || []);
-        
-        // Combine history from both lent and borrowed
-        const allHistory = [
-          ...(historyLentData.loans || []),
-          ...(historyBorrowedData.loans || [])
-        ].sort((a, b) => {
-          const dateA = new Date(a.actual_return_date || a.request_date || 0);
-          const dateB = new Date(b.actual_return_date || b.request_date || 0);
-          return dateB.getTime() - dateA.getTime();
-        });
-        
-        setHistoryLoans(allHistory);
-      } else {
-        setError('שגיאה בטעינת ההשאלות');
+      if (!ownerResponse.ok || !borrowerResponse.ok) {
+        throw new Error('שגיאה בטעינת היסטוריית ההשאלות')
       }
+
+      const combined = [
+        ...(ownerData.loans || []),
+        ...(borrowerData.loans || []),
+      ].sort((a: LoanRecord, b: LoanRecord) => {
+        const aDate = new Date(a.actual_return_date || a.request_date || 0).getTime()
+        const bDate = new Date(b.actual_return_date || b.request_date || 0).getTime()
+        return bDate - aDate
+      })
+
+      setHistoryLoans(combined)
     } catch (err) {
-      console.error('Error fetching loans:', err);
-      setError('שגיאה בטעינת ההשאלות');
+      console.error('Error fetching history:', err)
+      setError(err instanceof Error ? err.message : 'שגיאה בטעינת היסטוריית ההשאלות')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [familyId]);
+  }
 
   useEffect(() => {
     if (familyId) {
-      fetchLoans();
+      fetchHistory()
     }
-  }, [familyId, fetchLoans]);
-
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-
-  const handleReturnClick = (loan: Loan) => {
-    setSelectedLoan(loan);
-    setReturnDialogOpen(true);
-  };
-
-  const handleReturnSuccess = () => {
-    fetchLoans(); // Refresh the loans list
-  };
+  }, [familyId])
 
   if (loading) {
     return (
@@ -194,76 +198,39 @@ export default function LoansDashboard() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 } }}>
-        <Box mb={4}>
-          <Typography variant="h4" component="h1" gutterBottom>
-            ניהול השאלות
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            כאן תוכלו לנהל את ההשאלות - ספרים שהשאלתם ושאלתם
-          </Typography>
-        </Box>
+      <Box mb={4}>
+        <Typography variant="h4" component="h1" gutterBottom>
+          היסטוריית השאלות
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          כל הספרים שהשאלתם או השאלתם בעבר
+        </Typography>
+      </Box>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 3 }}>
-            {error}
-          </Alert>
-        )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
 
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-          <Tabs value={tabValue} onChange={handleTabChange} aria-label="loan tabs">
-            <Tab label={`ספרים שהשאלנו (${lentLoans.length})`} />
-            <Tab label={`ספרים ששאלנו (${borrowedLoans.length})`} />
-            <Tab label={`היסטוריה (${historyLoans.length})`} />
-          </Tabs>
-        </Box>
-
-        {/* Books We Lent Tab */}
-        <TabPanel value={tabValue} index={0}>
-          {lentLoans.length === 0 ? (
-            <Alert severity="info">אין ספרים מושאלים כרגע</Alert>
-          ) : (
-            lentLoans.map((loan) => (
-              <LoanCard
-                key={loan.id}
-                loan={loan}
-                type="lent"
-                onReturn={handleReturnClick}
-              />
-            ))
-          )}
-        </TabPanel>
-
-        {/* Books We Borrowed Tab */}
-        <TabPanel value={tabValue} index={1}>
-          {borrowedLoans.length === 0 ? (
-            <Alert severity="info">אין ספרים שאולים כרגע</Alert>
-          ) : (
-            borrowedLoans.map((loan) => (
-              <LoanCard key={loan.id} loan={loan} type="borrowed" />
-            ))
-          )}
-        </TabPanel>
-
-        {/* History Tab */}
-        <TabPanel value={tabValue} index={2}>
-          {historyLoans.length === 0 ? (
-            <Alert severity="info">אין היסטוריית השאלות</Alert>
-          ) : (
-            historyLoans.map((loan) => (
-              <LoanCard key={loan.id} loan={loan} type="history" />
-            ))
-          )}
-        </TabPanel>
-
-        {/* Return Book Dialog */}
-        {selectedLoan && (
-          <ReturnBookDialog
-            open={returnDialogOpen}
-            onClose={() => setReturnDialogOpen(false)}
-            loan={selectedLoan}
-            onSuccess={handleReturnSuccess}
-          />
-        )}
-      </Container>
+      {historyLoans.length === 0 ? (
+        <Alert severity="info">אין רשומות היסטוריות להצגה</Alert>
+      ) : (
+        <Grid container spacing={3}>
+          {historyLoans.map((loan) => {
+            const book = toCatalogBook(loan, familyId)
+            const historyLabel = getHistoryLabel(loan, familyId)
+            return (
+              <Grid key={loan.id} size={{ xs: 12, md: 6 }}>
+                <CatalogBookCard book={book} />
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                  {historyLabel}
+                </Typography>
+              </Grid>
+            )
+          })}
+        </Grid>
+      )}
+    </Container>
   );
 }

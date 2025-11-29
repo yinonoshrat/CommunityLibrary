@@ -2,7 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { db, supabase } from './db/adapter.js';
+import { db, supabase, supabaseAuth } from './db/adapter.js';
 import GeminiVisionService from './services/geminiVision.js';
 import OpenAIVisionService from './services/openaiVision.js';
 import HybridVisionService from './services/hybridVision.js';
@@ -80,18 +80,40 @@ app.use(async (req, res, next) => {
     const token = authHeader.substring(7);
     try {
       // Verify token with Supabase
-      const { data: { user }, error } = await supabase.auth.getUser(token);
+      const { data: { user }, error } = await authClient.auth.getUser(token);
       if (user && !error) {
-        // Get the actual user ID from our users table using auth_id
-        const { data: userData } = await supabase
-          .from('users')
-          .select('id')
-          .eq('auth_id', user.id)
-          .single();
-        
-        if (userData) {
-          // Set user ID in header for endpoints to use
-          req.headers['x-user-id'] = userData.id;
+        let resolvedUserId = user.id;
+        let resolvedFamilyId = null;
+
+        try {
+          // Prefer direct match on primary key (id)
+          let { data: userRecord, error: userRecordError } = await supabase
+            .from('users')
+            .select('id, family_id')
+            .eq('id', user.id)
+            .single();
+
+          if (userRecordError || !userRecord) {
+            // Legacy fallback for schemas that used auth_id column
+            const { data: legacyRecord } = await supabase
+              .from('users')
+              .select('id, family_id')
+              .eq('auth_id', user.id)
+              .single();
+            userRecord = legacyRecord || null;
+          }
+
+          if (userRecord) {
+            resolvedUserId = userRecord.id;
+            resolvedFamilyId = userRecord.family_id || null;
+          }
+        } catch (lookupError) {
+          console.warn('User context lookup failed:', lookupError.message);
+        }
+
+        req.headers['x-user-id'] = resolvedUserId;
+        if (resolvedFamilyId) {
+          req.headers['x-family-id'] = resolvedFamilyId;
         }
       }
     } catch (err) {
@@ -109,16 +131,30 @@ app.get('/api/health', (req, res) => {
     message: 'Community Library API is running',
     environment: environment,
     database: dbIdentifier,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    env_check: {
+      has_service_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      has_anon_key: !!process.env.SUPABASE_ANON_KEY,
+      has_url: !!process.env.SUPABASE_URL,
+      service_key_prefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) || 'MISSING'
+    }
   });
 });
 
 // ==================== AUTH ROUTES ====================
 
+const authClient = supabaseAuth ?? supabase;
+
+if (!supabaseAuth) {
+  console.warn('supabaseAuth client not configured. Falling back to service client for auth operations.');
+}
+
 // Register new user
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password, fullName, phone, whatsapp, familyName, familyPhone, familyWhatsapp, existingFamilyId } = req.body;
+
+    console.log('Registration attempt:', { email, fullName, familyName, existingFamilyId });
 
     // Validate required fields
     if (!email || !password || !fullName) {
@@ -133,7 +169,7 @@ app.post('/api/auth/register', async (req, res) => {
     const uniqueAuthEmail = `${email.split('@')[0]}.${randomStr}.${timestamp}@${email.split('@')[1]}`;
 
     // Create auth user with unique email
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const { data: authData, error: authError } = await authClient.auth.signUp({
       email: uniqueAuthEmail,
       password,
     });
@@ -153,15 +189,46 @@ app.post('/api/auth/register', async (req, res) => {
     if (existingFamilyId) {
       // Join existing family
       familyId = existingFamilyId;
+      console.log('Joining existing family:', familyId);
     } else if (familyName) {
-      // Create new family
-      const family = await db.families.create({
-        name: familyName,
-        phone: familyPhone || phone,
-        whatsapp: familyWhatsapp || whatsapp || phone,
-        email
-      });
-      familyId = family.id;
+      // Create new family - use direct supabase call with service role to bypass RLS
+      console.log('Creating new family:', { familyName, phone: familyPhone || phone });
+      console.log('Environment check:');
+      console.log('  - SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? `Present (${process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 20)}...)` : 'MISSING');
+      console.log('  - SUPABASE_URL:', process.env.SUPABASE_URL || 'MISSING');
+      console.log('  - supabase client headers:', supabase.rest?.headers || 'N/A');
+      
+      const { data: newFamily, error: familyError } = await supabase
+        .from('families')
+        .insert({
+          name: familyName,
+          phone: familyPhone || phone,
+          whatsapp: familyWhatsapp || whatsapp || phone,
+          email
+        })
+        .select()
+        .single();
+      
+      if (familyError) {
+        console.error('Family creation error:', familyError);
+        console.error('Error code:', familyError.code);
+        console.error('Error message:', familyError.message);
+        console.error('Error details:', familyError.details);
+        console.error('Full error object:', JSON.stringify(familyError, null, 2));
+        
+        // Clean up the auth user if family creation fails
+        try {
+          await supabase.auth.admin.deleteUser(authData.user.id);
+          console.log('Auth user cleaned up after family creation failure');
+        } catch (cleanupError) {
+          console.error('Failed to cleanup auth user:', cleanupError.message);
+        }
+        
+        return res.status(400).json({ error: 'Failed to create family: ' + familyError.message });
+      }
+      
+      console.log('Family created successfully:', newFamily.id);
+      familyId = newFamily.id;
     }
 
     // Create user profile with actual email and auth_email
@@ -231,7 +298,7 @@ app.post('/api/auth/login', async (req, res) => {
       authEmail = userData.auth_email || userData.email;
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await authClient.auth.signInWithPassword({
       email: authEmail,
       password,
     });
@@ -256,7 +323,7 @@ app.post('/api/auth/login', async (req, res) => {
 // Logout
 app.post('/api/auth/logout', async (req, res) => {
   try {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await authClient.auth.signOut();
     if (error) throw error;
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
@@ -273,7 +340,7 @@ app.get('/api/auth/me', async (req, res) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    const { data: { user }, error } = await authClient.auth.getUser(token);
 
     if (error) throw error;
 
@@ -441,19 +508,278 @@ app.delete('/api/users/:id', async (req, res) => {
 
 // ==================== BOOKS ROUTES ====================
 
+const formatFamilyContact = (family) => {
+  if (!family) return null;
+  return {
+    id: family.id,
+    name: family.name,
+    phone: family.phone || null,
+    whatsapp: family.whatsapp || null,
+    email: family.email || null,
+  };
+};
+
+const normalizeLoanRecord = (loan) => {
+  if (!loan) return null;
+  return {
+    id: loan.id,
+    status: loan.status,
+    familyBookId: loan.family_book_id,
+    borrowerFamilyId: loan.borrower_family_id,
+    ownerFamilyId: loan.owner_family_id,
+    requestDate: loan.request_date,
+    approvedDate: loan.approved_date,
+    dueDate: loan.due_date,
+    returnDate: loan.actual_return_date || loan.return_date || null,
+    notes: loan.notes || null,
+    borrowerFamily: formatFamilyContact(loan.borrower_family),
+    ownerFamily: formatFamilyContact(loan.owner_family),
+  };
+};
+
+const groupBooksForResponse = ({ books, loanMap, likesMap, viewerFamilyId, view, sortBy }) => {
+  const grouped = new Map();
+
+  for (const book of books) {
+    const catalogId = book.book_catalog_id || book.book_catalog?.id;
+    if (!catalogId) continue;
+
+    if (!grouped.has(catalogId)) {
+      grouped.set(catalogId, {
+        catalogId,
+        title: book.title,
+        titleHebrew: book.title_hebrew,
+        author: book.author,
+        authorHebrew: book.author_hebrew,
+        isbn: book.isbn,
+        publisher: book.publisher,
+        publishYear: book.publish_year,
+        genre: book.genre,
+        ageRange: book.age_range,
+        pages: book.pages,
+        description: book.description,
+        coverImageUrl: book.cover_image_url,
+        series: book.series,
+        seriesNumber: book.series_number,
+        stats: {
+          totalCopies: 0,
+          availableCopies: 0,
+          onLoanCopies: 0,
+        },
+        likesCount: likesMap.get(catalogId) || 0,
+        owners: [],
+        viewerContext: {
+          owns: false,
+          borrowed: false,
+          ownedCopies: [],
+          borrowedLoan: null,
+        },
+        updatedAt: book.updated_at,
+      });
+    }
+
+    const group = grouped.get(catalogId);
+    const loan = loanMap.get(book.id) || null;
+    const isViewerOwner = Boolean(viewerFamilyId && book.family_id === viewerFamilyId);
+
+    const ownerEntry = {
+      familyBookId: book.id,
+      status: book.status,
+      condition: book.condition,
+      notes: book.notes,
+      familyId: book.family_id,
+      family: formatFamilyContact(book.families),
+      loan,
+      isViewerOwner,
+    };
+
+    group.owners.push(ownerEntry);
+    group.stats.totalCopies += 1;
+    if (book.status === 'available') {
+      group.stats.availableCopies += 1;
+    }
+    if (loan) {
+      group.stats.onLoanCopies += 1;
+    }
+
+    if (isViewerOwner) {
+      group.viewerContext.owns = true;
+      group.viewerContext.ownedCopies.push({
+        familyBookId: book.id,
+        status: book.status,
+        loan,
+      });
+    }
+
+    if (loan && viewerFamilyId && loan.borrowerFamilyId === viewerFamilyId) {
+      group.viewerContext.borrowed = true;
+      group.viewerContext.borrowedLoan = loan;
+    }
+  }
+
+  let response = Array.from(grouped.values());
+
+  if (view === 'my') {
+    response = response.filter((book) => book.viewerContext.owns);
+  } else if (view === 'borrowed') {
+    response = response.filter((book) => book.viewerContext.borrowed);
+  }
+
+  response.sort((a, b) => {
+    switch (sortBy) {
+      case 'author':
+        return (a.author || '').localeCompare(b.author || '', 'he');
+      case 'updated':
+        return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+      case 'title':
+      default:
+        return (a.title || '').localeCompare(b.title || '', 'he');
+    }
+  });
+
+  return response;
+};
+
+const parseNumberParam = (value) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
 app.get('/api/books', async (req, res) => {
   try {
-    const { familyId, status, title, author, genre, series } = req.query;
-    const books = await db.books.getAll({
-      familyId,
+    const {
+      familyId: familyIdQuery,
+      view: viewQuery,
+      scope: scopeQuery,
       status,
       title,
       author,
       genre,
-      series
+      series,
+      ageRange,
+      search,
+      q,
+      limit,
+      offset,
+      sortBy,
+    } = req.query;
+
+    const userId = req.headers['x-user-id'];
+    const familyIdHeader = req.headers['x-family-id'];
+    const view = (viewQuery || scopeQuery || (familyIdQuery ? 'my' : 'all') || 'my').toString();
+
+    let viewerFamilyId = familyIdQuery || familyIdHeader || null;
+    if (!viewerFamilyId && userId) {
+      try {
+        const viewerUser = await db.users.getById(userId);
+        viewerFamilyId = viewerUser?.family_id || null;
+      } catch (err) {
+        console.warn('Unable to resolve viewer family:', err.message);
+      }
+    }
+
+    if ((view === 'my' || view === 'borrowed') && !viewerFamilyId) {
+      return res.status(400).json({ error: 'Family context required for this view' });
+    }
+
+    const filters = {
+      title,
+      author,
+      genre,
+      series,
+      ageRange,
+      search: search || q,
+      limit: parseNumberParam(limit),
+      offset: parseNumberParam(offset),
+      orderBy: sortBy === 'updated' ? 'updated_at' : 'title',
+      orderDir: sortBy === 'updated' ? 'desc' : 'asc',
+    };
+
+    if (status) {
+      if (status.includes(',')) {
+        filters.status = status.split(',').map((s) => s.trim()).filter(Boolean);
+      } else if (status !== 'all') {
+        filters.status = status;
+      }
+    }
+
+    let loanMap = new Map();
+
+    if (view === 'my') {
+      filters.familyId = viewerFamilyId;
+    } else if (view === 'borrowed') {
+      const borrowedLoans = await db.loans.getAll({ borrowerFamilyId: viewerFamilyId, status: 'active' });
+      if (!borrowedLoans.length) {
+        return res.json({ books: [], meta: { total: 0, view } });
+      }
+
+      const borrowedIds = borrowedLoans
+        .map((loan) => loan.family_book_id)
+        .filter(Boolean);
+
+      filters.ids = borrowedIds;
+
+      loanMap = new Map(
+        borrowedLoans
+          .filter((loan) => loan.family_book_id)
+          .map((loan) => [loan.family_book_id, normalizeLoanRecord(loan)])
+      );
+    }
+
+    if (!filters.limit && view === 'all') {
+      filters.limit = 100;
+    }
+
+    const books = await db.books.getAll(filters);
+
+    const missingLoanIds = books
+      .map((book) => book.id)
+      .filter((id) => id && !loanMap.has(id));
+
+    if (missingLoanIds.length) {
+      const activeLoans = await db.loans.getAll({ bookIds: missingLoanIds, status: 'active' });
+      activeLoans.forEach((loan) => {
+        if (loan.family_book_id) {
+          loanMap.set(loan.family_book_id, normalizeLoanRecord(loan));
+        }
+      });
+    }
+
+    // Fetch likes count for all catalog IDs in one query
+    const catalogIds = [...new Set(books.map(b => b.book_catalog_id).filter(Boolean))];
+    const likesMap = new Map();
+    if (catalogIds.length > 0) {
+      const { data: likesData } = await supabase
+        .from('likes')
+        .select('book_catalog_id')
+        .in('book_catalog_id', catalogIds);
+      
+      if (likesData) {
+        for (const like of likesData) {
+          likesMap.set(like.book_catalog_id, (likesMap.get(like.book_catalog_id) || 0) + 1);
+        }
+      }
+    }
+
+    const grouped = groupBooksForResponse({
+      books,
+      loanMap,
+      likesMap,
+      viewerFamilyId,
+      view,
+      sortBy,
     });
-    res.json({ books });
+
+    res.json({
+      books: grouped,
+      meta: {
+        total: grouped.length,
+        view,
+      },
+    });
   } catch (error) {
+    console.error('Error fetching books:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -925,6 +1251,10 @@ app.get('/api/recommendations', async (req, res) => {
 
 // ==================== GENRE MAPPING ROUTES ====================
 
+const isMissingGenreTableError = (error) => {
+  return Boolean(error?.message && error.message.includes('genre_mappings') && error.message.includes('schema cache'));
+};
+
 // Get all genre mappings
 app.get('/api/genre-mappings', async (req, res) => {
   try {
@@ -937,6 +1267,10 @@ app.get('/api/genre-mappings', async (req, res) => {
     
     res.json({ mappings: data || [] });
   } catch (error) {
+    if (isMissingGenreTableError(error)) {
+      console.warn('genre_mappings table missing - returning empty mapping list');
+      return res.json({ mappings: [] });
+    }
     console.error('Failed to fetch genre mappings:', error);
     res.status(500).json({ error: error.message });
   }
@@ -989,6 +1323,13 @@ app.post('/api/genre-mappings', async (req, res) => {
       res.json({ mapping: data });
     }
   } catch (error) {
+    if (isMissingGenreTableError(error)) {
+      console.warn('genre_mappings table missing - genre mapping persistence disabled');
+      return res.status(501).json({
+        error: 'Genre mappings storage is not configured yet',
+        message: 'Create the genre_mappings table to enable this feature',
+      });
+    }
     console.error('Failed to save genre mapping:', error);
     res.status(500).json({ error: error.message });
   }
@@ -1052,6 +1393,13 @@ app.post('/api/books/detect-from-image', upload.single('image'), async (req, res
           };
         } else if (bookDetails && bookDetails.confidence >= 40) {
           // Medium confidence - merge but keep original title/author
+          const rawSeriesNumber = book.series_number ?? bookDetails.series_number;
+          const seriesNumber = rawSeriesNumber === null || rawSeriesNumber === undefined
+            ? null
+            : Number.isFinite(Number(rawSeriesNumber))
+              ? Number(rawSeriesNumber)
+              : parseInt(String(rawSeriesNumber).match(/\d+/)?.[0] || '', 10);
+
           return {
             title: book.title,
             author: book.author || bookDetails.author,
@@ -1064,6 +1412,8 @@ app.post('/api/books/detect-from-image', upload.single('image'), async (req, res
             genre: bookDetails.genre,
             age_range: bookDetails.age_range,
             language: bookDetails.language,
+             series: book.series || bookDetails.series,
+             series_number: seriesNumber === null || Number.isNaN(seriesNumber) ? null : seriesNumber,
             confidence: 'medium',
             confidenceScore: bookDetails.confidence
           };

@@ -249,7 +249,8 @@ Your task:
 2. Use the structured OCR data to understand which text blocks belong together
 3. Match text blocks to the books you see based on their position
 4. Group text that appears close together (same book spine/cover)
-5. For each book, identify the title and author from the grouped text
+5. For each book, identify the title and author from the grouped text and the image
+6. if you can identify also series and number include them in the output
 
 Understanding the data:
 - Each text block has a position (centerX, centerY) and orientation (horizontal/vertical)
@@ -262,6 +263,8 @@ Return ONLY a valid JSON array with this exact structure:
   {
     "title": "exact book title from OCR",
     "author": "author name from OCR or empty string if not found"
+    "series": "series name or empty string if not found",
+    "series_number": number or null if not found
   }
 ]
 
@@ -455,8 +458,28 @@ Important guidelines:
       .filter(book => book && typeof book === 'object' && book.title)
       .map(book => ({
         title: String(book.title).trim(),
-        author: book.author ? String(book.author).trim() : ''
+        author: book.author ? String(book.author).trim() : '',
+        series: book.series ? String(book.series).trim() : (book.series_title ? String(book.series_title).trim() : null),
+        series_number: this.normalizeSeriesNumber(
+          book.series_number ?? book.seriesNumber ?? book.seriesIndex ?? null
+        )
       }));
+  }
+
+  normalizeSeriesNumber(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+    const match = String(value).match(/\d+/);
+    if (match) {
+      const num = Number(match[0]);
+      return Number.isFinite(num) ? num : null;
+    }
+    return null;
   }
 }
 

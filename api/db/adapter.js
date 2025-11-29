@@ -1,11 +1,23 @@
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseKey) {
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('Missing Supabase environment variables:');
+  console.error('SUPABASE_URL:', supabaseUrl ? 'Present' : 'MISSING');
+  console.error('SUPABASE_SERVICE_ROLE_KEY:', supabaseServiceKey ? 'Present' : 'MISSING');
   throw new Error('Missing Supabase environment variables')
 }
+
+if (!supabaseAnonKey) {
+  console.warn('SUPABASE_ANON_KEY not found. Auth client operations may fail.');
+}
+
+console.log('Initializing Supabase client with service role key');
+console.log('URL:', supabaseUrl);
+console.log('Service role key prefix:', supabaseServiceKey.substring(0, 20) + '...');
 
 // Configure fetch to handle self-signed certificates in development
 const customFetch = (url, options = {}) => {
@@ -16,14 +28,28 @@ const customFetch = (url, options = {}) => {
   return fetch(url, options);
 };
 
-export const supabase = createClient(supabaseUrl, supabaseKey, {
+export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
-    persistSession: false
+    persistSession: false,
+    autoRefreshToken: false,
   },
   global: {
-    fetch: customFetch
+    fetch: customFetch,
+    headers: {
+      'apikey': supabaseServiceKey,
+      'Authorization': `Bearer ${supabaseServiceKey}`
+    }
   }
 })
+
+export const supabaseService = supabase
+
+export const supabaseAuth = supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false },
+      global: { fetch: customFetch }
+    })
+  : null
 
 // Database adapter following the pattern from copilot-instructions.md
 export const db = {
@@ -175,16 +201,62 @@ export const db = {
     getAll: async (filters = {}) => {
       let query = supabase
         .from('books_view')
-        .select('*, families(name, phone, whatsapp)')
+        .select('*, families(name, phone, whatsapp, email)')
 
-      if (filters.familyId) query = query.eq('family_id', filters.familyId)
-      if (filters.status) query = query.eq('status', filters.status)
-      if (filters.title) query = query.ilike('title', `%${filters.title}%`)
-      if (filters.author) query = query.ilike('author', `%${filters.author}%`)
-      if (filters.genre) query = query.eq('genre', filters.genre)
-      if (filters.series) query = query.ilike('series', `%${filters.series}%`)
+      if (filters.familyId) {
+        query = query.eq('family_id', filters.familyId)
+      }
 
-      query = query.order('title')
+      if (filters.ids?.length) {
+        query = query.in('id', filters.ids)
+      }
+
+      if (filters.status) {
+        if (Array.isArray(filters.status)) {
+          query = query.in('status', filters.status)
+        } else if (filters.status !== 'all') {
+          query = query.eq('status', filters.status)
+        }
+      }
+
+      if (filters.title) {
+        query = query.ilike('title', `%${filters.title}%`)
+      }
+
+      if (filters.author) {
+        query = query.ilike('author', `%${filters.author}%`)
+      }
+
+      if (filters.genre && filters.genre !== 'all') {
+        query = query.eq('genre', filters.genre)
+      }
+
+      if (filters.ageRange && filters.ageRange !== 'all') {
+        query = query.eq('age_range', filters.ageRange)
+      }
+
+      if (filters.series) {
+        query = query.ilike('series', `%${filters.series}%`)
+      }
+
+      if (filters.search) {
+        const term = filters.search.trim()
+        if (term) {
+          query = query.or(`title.ilike.%${term}%,author.ilike.%${term}%,series.ilike.%${term}%`)
+        }
+      }
+
+      if (filters.orderBy) {
+        query = query.order(filters.orderBy, { ascending: filters.orderDir !== 'desc' })
+      } else {
+        query = query.order('title')
+      }
+
+      if (typeof filters.limit === 'number') {
+        const from = typeof filters.offset === 'number' ? filters.offset : 0
+        const to = from + filters.limit - 1
+        query = query.range(from, to)
+      }
 
       const { data, error } = await query
       if (error) throw error
@@ -224,11 +296,11 @@ export const db = {
           author_hebrew: book.author_hebrew,
           isbn: book.isbn,
           publisher: book.publisher,
-          publish_year: book.publish_year,
+          year_published: book.publish_year,
           genre: book.genre,
-          age_range: book.age_range,
+          age_level: book.age_range,
           pages: book.pages,
-          description: book.description,
+          summary: book.description,
           cover_image_url: book.cover_image_url,
           series: book.series,
           series_number: book.series_number
@@ -287,11 +359,11 @@ export const db = {
         author_hebrew: updates.author_hebrew,
         isbn: updates.isbn,
         publisher: updates.publisher,
-        publish_year: updates.publish_year,
+        year_published: updates.publish_year,
         genre: updates.genre,
-        age_range: updates.age_range,
+        age_level: updates.age_range,
         pages: updates.pages,
-        description: updates.description,
+        summary: updates.description,
         cover_image_url: updates.cover_image_url,
         series: updates.series,
         series_number: updates.series_number
@@ -396,6 +468,7 @@ export const db = {
       if (filters.borrowerFamilyId) query = query.eq('borrower_family_id', filters.borrowerFamilyId)
       if (filters.ownerFamilyId) query = query.eq('owner_family_id', filters.ownerFamilyId)
       if (filters.status) query = query.eq('status', filters.status)
+      if (filters.bookIds?.length) query = query.in('family_book_id', filters.bookIds)
       if (filters.bookId) query = query.eq('family_book_id', filters.bookId)
 
       query = query.order('request_date', { ascending: false })

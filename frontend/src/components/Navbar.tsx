@@ -90,7 +90,7 @@ export default function Navbar({ user }: NavbarProps) {
                 חיפוש ספרים
               </MenuItem>
               <MenuItem onClick={() => { navigate('/loans'); handleClose(); }}>
-                השאלות
+                היסטוריית השאלות
               </MenuItem>
               <MenuItem onClick={() => { navigate('/recommendations'); handleClose(); }}>
                 המלצות

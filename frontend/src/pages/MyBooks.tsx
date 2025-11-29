@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react'
 import {
   Container,
   Typography,
@@ -13,162 +13,210 @@ import {
   InputAdornment,
   CircularProgress,
   Alert,
-} from '@mui/material';
-import type { SelectChangeEvent } from '@mui/material';
+  ToggleButtonGroup,
+  ToggleButton,
+  IconButton,
+} from '@mui/material'
 import {
   Add as AddIcon,
   Search as SearchIcon,
-} from '@mui/icons-material';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { apiCall } from '../utils/apiCall';
-import BookCard from '../components/BookCard';
+  Refresh as RefreshIcon,
+} from '@mui/icons-material'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { apiCall } from '../utils/apiCall'
+import CatalogBookCard from '../components/CatalogBookCard'
+import ReturnBookDialog from '../components/ReturnBookDialog'
+import type { CatalogBook, BookLoanSummary } from '../types'
 
-interface Book {
-  id: string;
-  title: string;
-  author: string;
-  series?: string;
-  series_number?: number;
-  genre?: string;
-  age_level?: string;
-  cover_image_url?: string;
-  status: 'available' | 'on_loan' | 'borrowed';
-  year_published?: number;
+type BookView = 'my' | 'borrowed' | 'all'
+
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'כל הסטטוסים' },
+  { value: 'available', label: 'זמין' },
+  { value: 'on_loan', label: 'מושאל' },
+]
+
+const GENRE_OPTIONS = ['הכל', 'רומן', 'מתח', 'מדע בדיוני', 'פנטזיה', 'ביוגרפיה', 'ילדים', 'נוער', 'עיון', 'אחר']
+
+type ReturnDialogLoan = {
+  id: string
+  family_books?: {
+    book_catalog: {
+      title?: string
+      title_hebrew?: string
+      author?: string
+      author_hebrew?: string
+    }
+  }
+  books?: {
+    title?: string
+    title_hebrew?: string
+    author?: string
+    author_hebrew?: string
+  }
+  borrower_family?: {
+    name: string
+    phone?: string
+    whatsapp?: string
+  }
 }
 
 export default function MyBooks() {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const [searchParams] = useSearchParams();
-  const [books, setBooks] = useState<Book[]>([]);
-  const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all');
-  const [genreFilter, setGenreFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('title');
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialView = (searchParams.get('view') as BookView) || 'my'
+  const initialStatus = searchParams.get('status') || 'all'
+  const initialGenre = searchParams.get('genre') || 'all'
+  const initialSearch = searchParams.get('q') || ''
+  const initialSort = searchParams.get('sortBy') || 'title'
+
+  const [view, setView] = useState<BookView>(initialView)
+  const [searchQuery, setSearchQuery] = useState(initialSearch)
+  const [statusFilter, setStatusFilter] = useState(initialStatus)
+  const [genreFilter, setGenreFilter] = useState(initialGenre)
+  const [sortBy, setSortBy] = useState(initialSort)
+  const [books, setBooks] = useState<CatalogBook[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [selectedLoan, setSelectedLoan] = useState<ReturnDialogLoan | null>(null)
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false)
+  const [refreshFlag, setRefreshFlag] = useState(0)
 
   useEffect(() => {
-    fetchBooks();
-  }, [user]);
+    const params = new URLSearchParams()
+    params.set('view', view)
+    if (searchQuery) params.set('q', searchQuery)
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (genreFilter !== 'all') params.set('genre', genreFilter)
+    if (sortBy !== 'title') params.set('sortBy', sortBy)
+    setSearchParams(params, { replace: true })
+  }, [view, searchQuery, statusFilter, genreFilter, sortBy, setSearchParams])
 
   useEffect(() => {
-    filterAndSortBooks();
-  }, [books, searchQuery, statusFilter, genreFilter, sortBy]);
+    let isCancelled = false
 
-  const fetchBooks = async () => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
+    const loadBooks = async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const params = new URLSearchParams()
+        params.set('view', view)
+        if (searchQuery.trim()) params.set('search', searchQuery.trim())
+        if (statusFilter !== 'all') params.set('status', statusFilter)
+        if (genreFilter !== 'all') params.set('genre', genreFilter)
+        if (sortBy !== 'title') params.set('sortBy', sortBy)
 
-    try {
-      setError(null);
-      
-      // Get user profile to get family_id
-      const userResponse = await apiCall<{ user: any }>(`/api/users/${user.id}`);
-      const familyId = userResponse.user?.family_id;
-
-      if (familyId) {
-        const booksResponse = await apiCall<{ books: Book[] }>(`/api/books?familyId=${familyId}`);
-        setBooks(booksResponse.books || []);
+        const response = await apiCall<{ books: CatalogBook[] }>(`/api/books?${params.toString()}`)
+        if (!isCancelled) {
+          setBooks(response.books || [])
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          console.error('Failed to load books', err)
+          setError(err instanceof Error ? err.message : 'שגיאה בטעינת הספרים')
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false)
+        }
       }
-
-      setLoading(false);
-    } catch (err: any) {
-      console.error('Failed to fetch books:', err);
-      setError(err.message || 'שגיאה בטעינת הספרים');
-      setLoading(false);
-    }
-  };
-
-  const filterAndSortBooks = () => {
-    let filtered = [...books];
-
-    // Apply search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (book) =>
-          book.title.toLowerCase().includes(query) ||
-          book.author.toLowerCase().includes(query)
-      );
     }
 
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((book) => book.status === statusFilter);
+    loadBooks()
+    return () => {
+      isCancelled = true
     }
+  }, [view, searchQuery, statusFilter, genreFilter, sortBy, refreshFlag])
 
-    // Apply genre filter
-    if (genreFilter !== 'all') {
-      filtered = filtered.filter((book) => book.genre === genreFilter);
+  const uniqueGenres = useMemo(() => {
+    const dynamic = new Set<string>()
+    books.forEach((book) => {
+      if (book.genre) dynamic.add(book.genre)
+    })
+    return Array.from(new Set([...GENRE_OPTIONS, ...dynamic]))
+  }, [books])
+
+  const handleViewChange = (_: React.SyntheticEvent, nextView: BookView) => {
+    if (nextView) {
+      setView(nextView)
     }
-
-    // Apply sorting
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'title':
-          return a.title.localeCompare(b.title, 'he');
-        case 'author':
-          return a.author.localeCompare(b.author, 'he');
-        case 'year':
-          return (b.year_published || 0) - (a.year_published || 0);
-        default:
-          return 0;
-      }
-    });
-
-    setFilteredBooks(filtered);
-  };
-
-  const handleStatusFilterChange = (event: SelectChangeEvent) => {
-    setStatusFilter(event.target.value);
-  };
-
-  const handleGenreFilterChange = (event: SelectChangeEvent) => {
-    setGenreFilter(event.target.value);
-  };
-
-  const handleSortChange = (event: SelectChangeEvent) => {
-    setSortBy(event.target.value);
-  };
-
-  const uniqueGenres = Array.from(new Set(books.map((book) => book.genre).filter(Boolean)));
-
-  if (loading) {
-    return (
-      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
-          <CircularProgress />
-        </Box>
-      </Container>
-    );
   }
+
+  const handleSearchSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    setSearchQuery(searchQuery.trim())
+  }
+
+  const handleRefresh = () => {
+    setRefreshFlag(Date.now())
+  }
+
+  const handleMarkReturned = ({ book, loan }: { book: CatalogBook; loan: BookLoanSummary }) => {
+    const dialogLoan: ReturnDialogLoan = {
+      id: loan.id,
+      borrower_family: loan.borrowerFamily
+        ? {
+            name: loan.borrowerFamily.name || 'משפחה',
+            phone: loan.borrowerFamily.phone,
+            whatsapp: loan.borrowerFamily.whatsapp,
+          }
+        : undefined,
+      family_books: {
+        book_catalog: {
+          title: book.title,
+          title_hebrew: book.titleHebrew,
+          author: book.author,
+          author_hebrew: book.authorHebrew,
+        },
+      },
+    }
+    setSelectedLoan(dialogLoan)
+    setReturnDialogOpen(true)
+  }
+
+  const handleReturnDialogClose = () => {
+    setReturnDialogOpen(false)
+    setSelectedLoan(null)
+  }
+
+  const handleReturnSuccess = () => {
+    setReturnDialogOpen(false)
+    setSelectedLoan(null)
+    setRefreshFlag(Date.now())
+  }
+
+  const subtitle = {
+    my: 'צפו בכל הספרים שבבעלות המשפחה שלכם, כולל ספרים זמינים ומושאלים',
+    borrowed: 'רשימת הספרים ששאלתם ממשפחות אחרות בקהילה',
+    all: 'קטלוג הקהילה - חפשו ספרים מעניינים וצפו במשפחות המחזיקות בהם',
+  }[view]
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      {/* Header */}
-      <Box mb={4} display="flex" justifyContent="space-between" alignItems="center">
+      <Box mb={3} display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
         <Box>
           <Typography variant="h4" component="h1" gutterBottom>
-            הספרים שלי
+            {view === 'all' ? 'קטלוג הקהילה' : 'הספרים שלי'}
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            {filteredBooks.length} ספרים בקטלוג
+            {subtitle}
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => navigate('/books/add')}
-          sx={{ py: 1.5 }}
-        >
-          הוסף ספר
-        </Button>
+        <Box display="flex" gap={1}>
+          <IconButton aria-label="רענן" onClick={handleRefresh}>
+            <RefreshIcon />
+          </IconButton>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/books/add')}>
+            הוסף ספר
+          </Button>
+        </Box>
       </Box>
+
+      <ToggleButtonGroup value={view} exclusive onChange={handleViewChange} sx={{ mb: 4 }}>
+        <ToggleButton value="my">הספרים שלי</ToggleButton>
+        <ToggleButton value="borrowed">ספרים ששאלתי</ToggleButton>
+        <ToggleButton value="all">כל הקטלוג</ToggleButton>
+      </ToggleButtonGroup>
 
       {error && (
         <Alert severity="error" sx={{ mb: 3 }}>
@@ -176,13 +224,12 @@ export default function MyBooks() {
         </Alert>
       )}
 
-      {/* Search and Filters */}
-      <Box mb={4}>
+      <Box component="form" onSubmit={handleSearchSubmit} mb={4}>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>
             <TextField
               fullWidth
-              placeholder="חפש לפי שם ספר או מחבר..."
+              placeholder="חפש לפי שם, מחבר או סדרה"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               InputProps={{
@@ -197,21 +244,21 @@ export default function MyBooks() {
           <Grid size={{ xs: 12, sm: 4, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>סטטוס</InputLabel>
-              <Select value={statusFilter} onChange={handleStatusFilterChange} label="סטטוס">
-                <MenuItem value="all">הכל</MenuItem>
-                <MenuItem value="available">זמין</MenuItem>
-                <MenuItem value="on_loan">מושאל</MenuItem>
-                <MenuItem value="borrowed">שאלנו</MenuItem>
+              <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} label="סטטוס">
+                {STATUS_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Grid>
           <Grid size={{ xs: 12, sm: 4, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>ז'אנר</InputLabel>
-              <Select value={genreFilter} onChange={handleGenreFilterChange} label="ז'אנר">
-                <MenuItem value="all">הכל</MenuItem>
+              <Select value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)} label="ז'אנר">
                 {uniqueGenres.map((genre) => (
-                  <MenuItem key={genre} value={genre}>
+                  <MenuItem key={genre} value={genre === 'הכל' ? 'all' : genre}>
                     {genre}
                   </MenuItem>
                 ))}
@@ -221,46 +268,47 @@ export default function MyBooks() {
           <Grid size={{ xs: 12, sm: 4, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>מיון</InputLabel>
-              <Select value={sortBy} onChange={handleSortChange} label="מיון">
+              <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="מיון">
                 <MenuItem value="title">שם הספר</MenuItem>
                 <MenuItem value="author">מחבר</MenuItem>
-                <MenuItem value="year">שנת פרסום</MenuItem>
+                <MenuItem value="updated">עודכן לאחרונה</MenuItem>
               </Select>
             </FormControl>
           </Grid>
         </Grid>
       </Box>
 
-      {/* Books Grid */}
-      {filteredBooks.length === 0 ? (
+      {loading ? (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="40vh">
+          <CircularProgress />
+        </Box>
+      ) : books.length === 0 ? (
         <Box textAlign="center" py={8}>
           <Typography variant="h6" color="text.secondary" gutterBottom>
-            {books.length === 0 ? 'אין ספרים בקטלוג' : 'לא נמצאו ספרים'}
+            לא נמצאו ספרים להצגה
           </Typography>
-          <Typography variant="body2" color="text.secondary" mb={3}>
-            {books.length === 0
-              ? 'הוסף את הספר הראשון שלך לקטלוג'
-              : 'נסה לשנות את הסינון או החיפוש'}
+          <Typography variant="body2" color="text.secondary">
+            נסו לשנות את החיפוש או להוסיף ספר חדש
           </Typography>
-          {books.length === 0 && (
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => navigate('/books/add')}
-            >
-              הוסף ספר
-            </Button>
-          )}
         </Box>
       ) : (
         <Grid container spacing={3}>
-          {filteredBooks.map((book) => (
-            <Grid key={book.id} size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
-              <BookCard book={book} onRefresh={fetchBooks} />
+          {books.map((book) => (
+            <Grid key={book.catalogId} size={{ xs: 12, md: 6 }}>
+              <CatalogBookCard book={book} onMarkReturned={handleMarkReturned} />
             </Grid>
           ))}
         </Grid>
       )}
+
+      {selectedLoan && (
+        <ReturnBookDialog
+          open={returnDialogOpen}
+          onClose={handleReturnDialogClose}
+          loan={selectedLoan}
+          onSuccess={handleReturnSuccess}
+        />
+      )}
     </Container>
-  );
+  )
 }

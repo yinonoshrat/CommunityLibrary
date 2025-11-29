@@ -86,3 +86,74 @@ export interface Loan {
     phone?: string;
   };
 }
+
+export interface BookLoanSummary {
+  id: string;
+  status: string;
+  familyBookId: string;
+  borrowerFamilyId?: string;
+  ownerFamilyId?: string;
+  requestDate?: string;
+  approvedDate?: string;
+  dueDate?: string;
+  returnDate?: string;
+  notes?: string | null;
+  borrowerFamily?: FamilyContact | null;
+  ownerFamily?: FamilyContact | null;
+}
+
+export interface FamilyContact {
+  id?: string;
+  name?: string;
+  phone?: string;
+  whatsapp?: string;
+  email?: string;
+}
+
+export interface BookOwner {
+  familyBookId: string;
+  status: string;
+  condition?: string | null;
+  notes?: string | null;
+  familyId: string;
+  family: FamilyContact | null;
+  loan?: BookLoanSummary | null;
+  isViewerOwner: boolean;
+}
+
+export interface CatalogBookViewerContext {
+  owns: boolean;
+  borrowed: boolean;
+  ownedCopies: Array<{
+    familyBookId: string;
+    status: string;
+    loan?: BookLoanSummary | null;
+  }>;
+  borrowedLoan?: BookLoanSummary | null;
+}
+
+export interface CatalogBook {
+  catalogId: string;
+  title?: string;
+  titleHebrew?: string;
+  author?: string;
+  authorHebrew?: string;
+  isbn?: string;
+  publisher?: string;
+  publishYear?: number;
+  genre?: string;
+  ageRange?: string;
+  pages?: number;
+  description?: string;
+  coverImageUrl?: string;
+  series?: string;
+  seriesNumber?: number;
+  stats: {
+    totalCopies: number;
+    availableCopies: number;
+    onLoanCopies: number;
+  };
+  likesCount: number;
+  owners: BookOwner[];
+  viewerContext: CatalogBookViewerContext;
+}

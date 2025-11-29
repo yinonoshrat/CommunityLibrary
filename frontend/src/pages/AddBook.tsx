@@ -9,6 +9,7 @@ import {
   Grid,
   Paper,
   Alert,
+  AlertTitle,
   CircularProgress,
   Card,
   CardContent,
@@ -26,6 +27,7 @@ import {
 import {
   Save as SaveIcon,
   Search as SearchIcon,
+  Add as AddIcon,
   CloudUpload as UploadIcon,
   CameraAlt as CameraIcon,
   Delete as DeleteIcon,
@@ -98,6 +100,7 @@ interface DetectedBook {
   expanded?: boolean;
   series?: string;
   series_number?: number;
+  source?: 'ai' | 'manual';
 }
 
 export default function AddBook() {
@@ -128,6 +131,7 @@ export default function AddBook() {
   // Genre mapping state
   const [genreMappings, setGenreMappings] = useState<any[]>([]);
   const [selectedBookCategories, setSelectedBookCategories] = useState<string[]>([]);
+  const [bulkErrors, setBulkErrors] = useState<{ title: string; message: string }[]>([]);
 
   const [formData, setFormData] = useState<BookFormData>({
     title: '',
@@ -225,6 +229,10 @@ export default function AddBook() {
       description: book.description,
       cover_image_url: book.cover_image_url,
       genre: deducedGenre || formData.genre, // Use deduced genre or keep current
+      series: book.series || formData.series,
+      series_number: typeof book.series_number === 'number' && Number.isFinite(book.series_number)
+        ? String(book.series_number)
+        : formData.series_number,
     });
     
     // Store categories for later saving the mapping
@@ -391,6 +399,7 @@ export default function AddBook() {
           selected: book.confidence !== 'low', // Auto-select high and medium confidence books
           tempId: `temp-${Date.now()}-${index}`,
           expanded: false,
+          source: 'ai',
         }));
         setDetectedBooks(booksWithSelection);
         
@@ -413,6 +422,34 @@ export default function AddBook() {
       setDetecting(false);
       setProgress(0);
     }
+  };
+
+  const handleAddManualDetectedBook = () => {
+    const tempId = `manual-${Date.now()}`;
+    setDetectedBooks((prevBooks) => [
+      ...prevBooks,
+      {
+        tempId,
+        title: '',
+        author: '',
+        publisher: '',
+        publish_year: undefined,
+        pages: undefined,
+        description: '',
+        cover_image_url: '',
+        isbn: '',
+        genre: '',
+        age_range: '',
+        confidence: 'low',
+        selected: true,
+        expanded: true,
+        series: '',
+        series_number: undefined,
+        source: 'manual',
+      },
+    ]);
+    setSuccess(false);
+    setError(null);
   };
 
   const handleToggleBook = (tempId: string) => {
@@ -459,9 +496,17 @@ export default function AddBook() {
       return;
     }
 
+    const invalidBooks = selectedBooks.filter((book) => !book.title || !book.title.trim());
+    if (invalidBooks.length > 0) {
+      setError('כל ספר חייב לכלול שם לפני ההוספה');
+      return;
+    }
+
     try {
       setAdding(true);
       setError(null);
+      setSuccess(false);
+      setBulkErrors([]);
 
       // Check if user is authenticated
       if (!user || !user.id) {
@@ -479,6 +524,15 @@ export default function AddBook() {
         },
       });
 
+      if (data.errors && data.errors.length > 0) {
+        setBulkErrors(
+          data.errors.map((item: any, index: number) => ({
+            title: item.book?.title || `ספר ${index + 1}`,
+            message: item.error,
+          }))
+        );
+      }
+
       if (data.added > 0) {
         setSuccessMessage(`נוספו בהצלחה ${data.added} ספרים לקטלוג!`);
         setSuccess(true);
@@ -486,15 +540,14 @@ export default function AddBook() {
           navigate('/books');
         }, 2000);
       } else {
-        setError('לא נוספו ספרים. בדוק את השגיאות.');
-      }
-
-      if (data.errors && data.errors.length > 0) {
-        console.error('Bulk add errors:', data.errors);
+        const firstError = data.errors?.[0]?.error;
+        setError(firstError ? firstError : 'לא נוספו ספרים. בדוק את השגיאות.');
       }
     } catch (err: any) {
       console.error('Bulk add error:', err);
-      setError(err.message || 'שגיאה בהוספת ספרים');
+      const friendly = err.message || err?.toString();
+      setBulkErrors([{ title: 'בקשת ההוספה נכשלה', message: friendly }]);
+      setError(friendly);
     } finally {
       setAdding(false);
     }
@@ -521,6 +574,7 @@ export default function AddBook() {
               setUploadMode(newMode);
               setError(null);
               setSuccess(false);
+              setBulkErrors([]);
             }
           }}
           aria-label="upload mode"
@@ -885,6 +939,31 @@ export default function AddBook() {
                   ביטול
                 </Button>
               </Box>
+
+              <Box sx={{ mt: 3 }}>
+                <Button
+                  variant="text"
+                  startIcon={<AddIcon />}
+                  onClick={handleAddManualDetectedBook}
+                >
+                  הוסף ספר ידני לרשימה
+                </Button>
+              </Box>
+
+              {bulkErrors.length > 0 && (
+                <Alert severity="warning" sx={{ mt: 3 }}>
+                  <AlertTitle>חלק מהספרים לא נוספו</AlertTitle>
+                  <Box component="ul" sx={{ pl: 3, mb: 0 }}>
+                    {bulkErrors.map((err, index) => (
+                      <Box component="li" key={`${err.title}-${index}`} sx={{ mb: 0.5 }}>
+                        <Typography variant="body2">
+                          <strong>{err.title || `ספר ${index + 1}`}:</strong> {err.message}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </Alert>
+              )}
             </Paper>
           )}
         </>

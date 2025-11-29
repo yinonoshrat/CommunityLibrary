@@ -18,6 +18,8 @@ export interface BookSearchResult {
   cover_image_url: string;
   source: string;
   categories?: string[]; // Google Books categories for genre deduction
+  series?: string | null;
+  series_number?: number | null;
 }
 
 export interface BookSearchSource {
@@ -122,6 +124,7 @@ class GoogleBooksSource implements BookSearchSource {
       if (data.items && Array.isArray(data.items)) {
         for (const item of data.items) {
           const volumeInfo = item.volumeInfo;
+          const { series, seriesNumber } = extractSeriesInfo(volumeInfo);
           
           // Extract ISBN
           let isbn = '';
@@ -147,6 +150,8 @@ class GoogleBooksSource implements BookSearchSource {
             cover_image_url: volumeInfo.imageLinks?.thumbnail || volumeInfo.imageLinks?.smallThumbnail || '',
             source: this.displayName,
             categories,
+            series,
+            series_number: seriesNumber,
           });
         }
       }
@@ -318,6 +323,73 @@ function removeDuplicates(results: BookSearchResult[]): BookSearchResult[] {
   }
 
   return unique;
+}
+
+function extractSeriesInfo(volumeInfo: any): { series: string | null; seriesNumber: number | null } {
+  const result = { series: null as string | null, seriesNumber: null as number | null };
+  if (!volumeInfo) return result;
+
+  const seriesInfo = volumeInfo.seriesInfo || volumeInfo.seriesinfo;
+  if (seriesInfo) {
+    result.series = seriesInfo.bookDisplaySeriesTitle
+      || seriesInfo.series
+      || seriesInfo.seriesTitle
+      || null;
+
+    if (!result.series && Array.isArray(seriesInfo.volumeSeries) && seriesInfo.volumeSeries.length > 0) {
+      result.series = seriesInfo.volumeSeries[0].series || null;
+      result.seriesNumber = parseSeriesNumber(seriesInfo.volumeSeries[0].volumeSeriesNumber);
+    }
+
+    if (seriesInfo.volumeSeriesNumber && result.seriesNumber == null) {
+      result.seriesNumber = parseSeriesNumber(seriesInfo.volumeSeriesNumber);
+    }
+  }
+
+  if (!result.series && typeof volumeInfo.subtitle === 'string') {
+    const match = volumeInfo.subtitle.match(/Book\s+(\d+)\s+of\s+(.+)/i);
+    if (match) {
+      result.seriesNumber = parseSeriesNumber(match[1]);
+      result.series = match[2].trim();
+    }
+  }
+
+  if (!result.series && typeof volumeInfo.title === 'string') {
+    const patterns = [
+      volumeInfo.title.match(/(.+?)\s+[\-–]\s+Book\s+(\d+)/i),
+      volumeInfo.title.match(/(.+?)\s+#(\d+)/),
+      volumeInfo.title.match(/(.+?)\s+,?\s*חלק\s+(\d+)/)
+    ].filter(Boolean) as RegExpMatchArray[];
+    if (patterns.length > 0) {
+      result.series = patterns[0][1].trim();
+      result.seriesNumber = result.seriesNumber ?? parseSeriesNumber(patterns[0][2]);
+    }
+  }
+
+  if (!result.series && typeof volumeInfo.description === 'string') {
+    const descriptionMatch = volumeInfo.description.match(/Book\s+(\d+)\s+of\s+([^\.\n]+)/i);
+    if (descriptionMatch) {
+      result.seriesNumber = parseSeriesNumber(descriptionMatch[1]);
+      result.series = descriptionMatch[2].trim();
+    }
+  }
+
+  return result;
+}
+
+function parseSeriesNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const match = String(value).match(/\d+/);
+  if (match) {
+    const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
 }
 
 /**

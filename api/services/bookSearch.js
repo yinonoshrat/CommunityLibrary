@@ -140,6 +140,7 @@ async function searchWithStrategy(title, author, strategy) {
 
       const volumeInfo = bestMatch.volumeInfo;
       const apiAuthor = volumeInfo.authors?.[0] || '';
+      const { series: detectedSeries, seriesNumber } = extractSeriesInfo(volumeInfo);
 
       // Preserve original author language if provided
       // Strongly prefer Hebrew input over English transliterations from API
@@ -206,6 +207,8 @@ async function searchWithStrategy(title, author, strategy) {
         genre: mapCategories(volumeInfo.categories),
         age_range: inferAgeRange(volumeInfo),
         language: volumeInfo.language || null,
+        series: detectedSeries,
+        series_number: seriesNumber,
         confidence: calculateConfidence(bestMatch, title, author)
       };
 
@@ -555,5 +558,77 @@ function inferAgeRange(volumeInfo) {
     }
   }
 
+  return null;
+}
+
+function extractSeriesInfo(volumeInfo) {
+  if (!volumeInfo) {
+    return { series: null, seriesNumber: null };
+  }
+
+  const seriesInfo = volumeInfo.seriesInfo || volumeInfo.seriesinfo;
+  const result = { series: null, seriesNumber: null };
+
+  if (seriesInfo) {
+    result.series = seriesInfo.bookDisplaySeriesTitle
+      || seriesInfo.series
+      || seriesInfo.seriesTitle
+      || null;
+
+    if (!result.series && Array.isArray(seriesInfo.volumeSeries) && seriesInfo.volumeSeries.length > 0) {
+      result.series = seriesInfo.volumeSeries[0].series || null;
+      result.seriesNumber = parseSeriesNumber(seriesInfo.volumeSeries[0].volumeSeriesNumber);
+    }
+
+    if (seriesInfo.volumeSeriesNumber && result.seriesNumber == null) {
+      result.seriesNumber = parseSeriesNumber(seriesInfo.volumeSeriesNumber);
+    }
+  }
+
+  // Try parsing common subtitle format: "Book 3 of The Series"
+  if (!result.series && volumeInfo.subtitle) {
+    const subtitle = volumeInfo.subtitle;
+    const match = subtitle.match(/Book\s+(\d+)\s+of\s+(.+)/i);
+    if (match) {
+      result.seriesNumber = parseSeriesNumber(match[1]);
+      result.series = match[2].trim();
+    }
+  }
+
+  // Look for patterns like "Series Name #4" in title
+  if (!result.series) {
+    const titlePattern = volumeInfo.title?.match(/(.+?)\s+[\-–]\s+Book\s+(\d+)/i)
+      || volumeInfo.title?.match(/(.+?)\s+#(\d+)/)
+      || volumeInfo.title?.match(/(.+?)\s+,?\s*חלק\s+(\d+)/);
+    if (titlePattern) {
+      result.series = titlePattern[1].trim();
+      result.seriesNumber = result.seriesNumber ?? parseSeriesNumber(titlePattern[2]);
+    }
+  }
+
+  // Check description for "Book X of Y"
+  if (!result.series && volumeInfo.description) {
+    const descriptionMatch = volumeInfo.description.match(/Book\s+(\d+)\s+of\s+([^\.\n]+)/i);
+    if (descriptionMatch) {
+      result.seriesNumber = parseSeriesNumber(descriptionMatch[1]);
+      result.series = descriptionMatch[2].trim();
+    }
+  }
+
+  return result;
+}
+
+function parseSeriesNumber(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const match = String(value).match(/\d+/);
+  if (match) {
+    const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
   return null;
 }
