@@ -189,9 +189,9 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
         )}
 
         {!book.viewerContext.owns && book.owners.length > 0 && (
-          <Box>
+          <Box sx={{ direction: 'rtl' }}>
             <Divider sx={{ my: 1 }} />
-            <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+            <Typography variant="body2" color="text.secondary" display="block" gutterBottom fontWeight={500}>
               משפחות בעלות ({book.stats.totalCopies})
             </Typography>
             {book.owners.slice(0, 2).map((owner) => (
@@ -201,38 +201,46 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  py: 0.5,
+                  py: 0.75,
+                  flexDirection: 'row-reverse',
                 }}
               >
-                <Typography variant="caption" fontWeight={owner.isViewerOwner ? 600 : 400}>
+                <Typography variant="body2" fontWeight={owner.isViewerOwner ? 600 : 400}>
                   {owner.family?.name || 'משפחה'}
                   {owner.loan?.borrowerFamily && ` (מושאל)`}
                 </Typography>
-                <Stack direction="row" spacing={0.5}>
-                  <Chip 
-                    label={owner.status === 'available' ? 'זמין' : 'מושאל'} 
-                    size="small" 
-                    color={owner.status === 'available' ? 'success' : 'default'}
-                    sx={{ height: 20, fontSize: '0.65rem' }}
-                  />
+                <Stack direction="row-reverse" spacing={1} alignItems="center">
                   {owner.family?.whatsapp && (
                     <IconButton
-                      size="small"
+                      size="medium"
                       onClick={(e) => {
                         e.stopPropagation()
                         const phone = owner.family?.whatsapp?.replace(/[^0-9]/g, '')
                         if (phone) window.open(`https://wa.me/${phone}`, '_blank')
                       }}
-                      sx={{ p: 0.25 }}
+                      sx={{ 
+                        p: 0.5,
+                        bgcolor: 'success.light',
+                        color: 'white',
+                        '&:hover': {
+                          bgcolor: 'success.main',
+                        }
+                      }}
                     >
-                      <WhatsAppIcon sx={{ fontSize: 16 }} />
+                      <WhatsAppIcon sx={{ fontSize: 20 }} />
                     </IconButton>
                   )}
+                  <Chip 
+                    label={owner.status === 'available' ? 'זמין' : 'מושאל'} 
+                    size="small" 
+                    color={owner.status === 'available' ? 'success' : 'default'}
+                    sx={{ height: 22, fontSize: '0.7rem' }}
+                  />
                 </Stack>
               </Box>
             ))}
             {book.owners.length > 2 && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="body2" color="text.secondary">
                 + עוד {book.owners.length - 2}
               </Typography>
             )}

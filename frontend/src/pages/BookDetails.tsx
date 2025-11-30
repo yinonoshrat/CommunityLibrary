@@ -42,9 +42,9 @@ interface Book {
   year_published?: number;
   publisher?: string;
   genre?: string;
-  age_level?: string;
+  age_range?: string;
   pages?: number;
-  summary?: string;
+  description?: string;
   cover_image_url?: string;
   status: 'available' | 'on_loan' | 'borrowed';
   family_id: string;
@@ -274,12 +274,12 @@ export default function BookDetails() {
                   <Typography variant="body1">{book.genre}</Typography>
                 </Grid>
               )}
-              {book.age_level && (
+              {book.age_range && (
                 <Grid size={{ xs: 6, sm: 4 }}>
                   <Typography variant="caption" color="text.secondary">
                     גיל מומלץ
                   </Typography>
-                  <Typography variant="body1">{book.age_level}</Typography>
+                  <Typography variant="body1">{book.age_range}</Typography>
                 </Grid>
               )}
               {book.year_published && (
@@ -316,13 +316,13 @@ export default function BookDetails() {
               )}
             </Grid>
 
-            {book.summary && (
+            {book.description && (
               <Box mb={3}>
                 <Typography variant="h6" gutterBottom>
                   תקציר
                 </Typography>
-                <Typography variant="body1" color="text.secondary">
-                  {book.summary}
+                <Typography variant="body1" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>
+                  {book.description}
                 </Typography>
               </Box>
             )}

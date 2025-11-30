@@ -280,7 +280,9 @@ export const db = {
         .rpc('find_book_in_catalog', {
           p_title: book.title,
           p_author: book.author || '',
-          p_isbn: book.isbn || null
+          p_isbn: book.isbn || null,
+          p_series: book.series || null,
+          p_series_number: book.series_number || null
         })
 
       if (searchError) throw searchError
@@ -316,23 +318,48 @@ export const db = {
         catalogId = newCatalogEntry.id
       }
 
-      // 3. Create family_books record (this family now owns this book)
-      const familyBook = {
-        family_id: book.family_id,
-        book_catalog_id: catalogId,
-        status: book.status || 'available',
-        condition: book.condition,
-        notes: book.notes,
-        acquired_date: book.acquired_date
-      }
-
-      const { data: familyBookData, error: familyBookError } = await supabase
+      // 3. Check if family already has this book
+      const { data: existingFamilyBook, error: checkError } = await supabase
         .from('family_books')
-        .insert(familyBook)
-        .select()
-        .single()
+        .select('id')
+        .eq('family_id', book.family_id)
+        .eq('book_catalog_id', catalogId)
+        .maybeSingle()
 
-      if (familyBookError) throw familyBookError
+      if (checkError) throw checkError
+
+      let familyBookData
+
+      if (existingFamilyBook) {
+        // Family already has this book - return existing entry
+        const { data: existing, error: existingError } = await supabase
+          .from('family_books')
+          .select()
+          .eq('id', existingFamilyBook.id)
+          .single()
+
+        if (existingError) throw existingError
+        familyBookData = existing
+      } else {
+        // 3a. Create family_books record (this family now owns this book)
+        const familyBook = {
+          family_id: book.family_id,
+          book_catalog_id: catalogId,
+          status: book.status || 'available',
+          condition: book.condition,
+          notes: book.notes,
+          acquired_date: book.acquired_date
+        }
+
+        const { data: newFamilyBook, error: familyBookError } = await supabase
+          .from('family_books')
+          .insert(familyBook)
+          .select()
+          .single()
+
+        if (familyBookError) throw familyBookError
+        familyBookData = newFamilyBook
+      }
 
       // 4. Return combined view data
       const { data: fullBook, error: viewError } = await supabase
@@ -343,10 +370,11 @@ export const db = {
 
       if (viewError) throw viewError
       
-      // Add flag to indicate if book was merged
+      // Add flags to indicate status
       return {
         ...fullBook,
-        _merged: existingBookId !== null
+        _merged: existingBookId !== null,
+        _alreadyOwned: existingFamilyBook !== null
       }
     },
 

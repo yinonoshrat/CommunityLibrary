@@ -38,7 +38,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiCall } from '../utils/apiCall';
 import { searchBooks, type BookSearchResult } from '../utils/bookSearch';
-import { fetchGenreMappings, deduceGenre, saveGenreMapping } from '../utils/genreMapping';
 
 interface BookFormData {
   title: string;
@@ -128,9 +127,6 @@ export default function AddBook() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<BookSearchResult[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
-  // Genre mapping state
-  const [genreMappings, setGenreMappings] = useState<any[]>([]);
-  const [selectedBookCategories, setSelectedBookCategories] = useState<string[]>([]);
   const [bulkErrors, setBulkErrors] = useState<{ title: string; message: string }[]>([]);
 
   const [formData, setFormData] = useState<BookFormData>({
@@ -152,13 +148,7 @@ export default function AddBook() {
 
   useEffect(() => {
     fetchUserFamily();
-    loadGenreMappings();
   }, [user]);
-
-  const loadGenreMappings = async () => {
-    const mappings = await fetchGenreMappings();
-    setGenreMappings(mappings);
-  };
 
   const fetchUserFamily = async () => {
     if (!user?.id) return;
@@ -179,10 +169,8 @@ export default function AddBook() {
     setSearchResults([]);
     
     try {
-      // Use the searchBooks utility with sequential strategy
-      // This will try Israel National Library first, then Google Books
+      // Use the searchBooks utility
       const results = await searchBooks(searchQuery, {
-        strategy: 'sequential',
         maxResults: 10,
       });
       
@@ -215,8 +203,8 @@ export default function AddBook() {
   }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectBook = (book: BookSearchResult) => {
-    // Deduce genre from Google Books categories
-    const deducedGenre = book.categories ? deduceGenre(book.categories, genreMappings) : null;
+    // Use genre from search result if available
+    const genreToUse = book.genre || formData.genre;
     
     setFormData({
       ...formData,
@@ -228,15 +216,12 @@ export default function AddBook() {
       pages: book.pages ? book.pages.toString() : '',
       description: book.description,
       cover_image_url: book.cover_image_url,
-      genre: deducedGenre || formData.genre, // Use deduced genre or keep current
+      genre: genreToUse, // Use genre from search or keep current
       series: book.series || formData.series,
       series_number: typeof book.series_number === 'number' && Number.isFinite(book.series_number)
         ? String(book.series_number)
         : formData.series_number,
     });
-    
-    // Store categories for later saving the mapping
-    setSelectedBookCategories(book.categories || []);
     
     // Clear search results after selection
     setSearchResults([]);
@@ -310,14 +295,6 @@ export default function AddBook() {
 
       // Check if book was merged with existing catalog entry
       const wasMerged = response.book?._merged;
-
-      // Save genre mapping if we have categories from search
-      if (selectedBookCategories.length > 0 && formData.genre) {
-        // Save mapping for each category
-        for (const category of selectedBookCategories) {
-          await saveGenreMapping(category, formData.genre);
-        }
-      }
 
       setSuccess(true);
       
@@ -978,7 +955,7 @@ export default function AddBook() {
           חפש ספר במאגרים
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          חפש ספר בספרייה הלאומית או ב-Google Books ומלא את הפרטים אוטומטית
+          חפש ספר ומלא את הפרטים אוטומטית
         </Typography>
         
         <Box display="flex" gap={2}>

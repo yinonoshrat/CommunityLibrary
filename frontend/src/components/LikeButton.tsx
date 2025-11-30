@@ -33,6 +33,11 @@ export default function LikeButton({ bookId, size = 'medium', showCount = true }
   const handleToggleLike = async () => {
     if (!user?.id || loading) return;
 
+    // Optimistically update UI immediately
+    const wasLiked = liked;
+    setLiked(!liked);
+    setLikeCount(prev => liked ? Math.max(0, prev - 1) : prev + 1);
+
     try {
       setLoading(true);
       const data = await apiCall(`/api/books/${bookId}/likes`, {
@@ -45,16 +50,17 @@ export default function LikeButton({ bookId, size = 'medium', showCount = true }
         }),
       });
 
-      // Update UI based on server response
-      if (data.liked === true) {
-        setLiked(true);
-        setLikeCount(prev => prev + 1);
-      } else if (data.liked === false) {
-        setLiked(false);
-        setLikeCount(prev => Math.max(0, prev - 1));
+      // Verify server response matches our optimistic update
+      if (data.liked !== !wasLiked) {
+        // Server returned different state, revert
+        setLiked(data.liked);
+        setLikeCount(prev => data.liked ? prev + 1 : Math.max(0, prev - 1));
       }
     } catch (err) {
       console.error('Error toggling like:', err);
+      // Revert optimistic update on error
+      setLiked(wasLiked);
+      setLikeCount(prev => wasLiked ? prev + 1 : Math.max(0, prev - 1));
     } finally {
       setLoading(false);
     }

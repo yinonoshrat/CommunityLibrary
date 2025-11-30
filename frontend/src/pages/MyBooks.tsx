@@ -207,7 +207,7 @@ export default function MyBooks() {
             <RefreshIcon />
           </IconButton>
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/books/add')}>
-            הוסף ספר
+            הוסף ספרים
           </Button>
         </Box>
       </Box>

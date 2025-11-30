@@ -6,7 +6,7 @@ import { db, supabase, supabaseAuth } from './db/adapter.js';
 import GeminiVisionService from './services/geminiVision.js';
 import OpenAIVisionService from './services/openaiVision.js';
 import HybridVisionService from './services/hybridVision.js';
-import { searchBookDetails } from './services/bookSearch.js';
+import { searchBookDetails, searchBooks } from './services/bookSearch.js';
 
 const app = express();
 
@@ -139,6 +139,45 @@ app.get('/api/health', (req, res) => {
       service_key_prefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) || 'MISSING'
     }
   });
+});
+
+// Book search endpoint
+app.get('/api/search-books', async (req, res) => {
+  try {
+    const { q, query, provider = 'auto', maxResults = 10 } = req.query;
+    
+    // Support both 'q' and 'query' parameters
+    const searchQuery = q || query;
+    
+    if (!searchQuery) {
+      return res.status(400).json({ 
+        error: 'Missing query parameter',
+        message: 'Please provide a search query using ?q=... or ?query=...'
+      });
+    }
+    
+    console.log(`Book search request: "${searchQuery}" (provider: ${provider})`);
+    
+    const results = await searchBooks(searchQuery, { 
+      provider, 
+      maxResults: parseInt(maxResults) 
+    });
+    
+    res.json({
+      success: true,
+      query: searchQuery,
+      provider,
+      count: results.length,
+      results
+    });
+    
+  } catch (error) {
+    console.error('Book search endpoint error:', error);
+    res.status(500).json({ 
+      error: 'Search failed',
+      message: error.message 
+    });
+  }
 });
 
 // ==================== AUTH ROUTES ====================
@@ -1503,6 +1542,7 @@ app.post('/api/books/bulk-add', async (req, res) => {
 
     // Validate and add each book
     const addedBooks = [];
+    const skippedBooks = [];
     const errors = [];
     
     for (const book of books) {
@@ -1534,7 +1574,16 @@ app.post('/api/books/bulk-add', async (req, res) => {
         // Insert book using adapter (handles deduplication in catalog)
         const data = await db.books.create(bookData);
 
-        addedBooks.push(data);
+        // Check if book was already owned
+        if (data._alreadyOwned) {
+          skippedBooks.push({
+            title: data.title,
+            author: data.author,
+            reason: 'already_owned'
+          });
+        } else {
+          addedBooks.push(data);
+        }
         
       } catch (error) {
         console.error('Book processing error:', error);
@@ -1545,8 +1594,10 @@ app.post('/api/books/bulk-add', async (req, res) => {
     res.json({
       success: true,
       added: addedBooks.length,
+      skipped: skippedBooks.length,
       failed: errors.length,
       books: addedBooks,
+      skippedBooks: skippedBooks,
       errors: errors
     });
     

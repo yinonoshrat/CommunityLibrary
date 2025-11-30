@@ -1,201 +1,174 @@
 /**
  * Book Search Service
  * 
- * Searches for book details using Google Books API
+ * Multi-provider book search supporting Simania and Google Books
  */
 
+const SIMANIA_API = 'https://simania.co.il/api/search';
 const GOOGLE_BOOKS_API = 'https://www.googleapis.com/books/v1/volumes';
 
+// Search provider configuration
+const PROVIDERS = {
+  simania: {
+    enabled: true,
+    name: 'Simania',
+    search: searchSimania
+  },
+  google: {
+    enabled: false, // Disabled for now, keep for future use
+    name: 'Google Books',
+    search: searchGoogleBooks
+  }
+};
+
 /**
- * Search for book details by title and author
+ * Search for books using query string
+ * @param {string} query - Search query (title, author, ISBN, etc.)
+ * @param {Object} options - Search options
+ * @returns {Promise<Array>} Array of book results
+ */
+export async function searchBooks(query, options = {}) {
+  const { provider = 'auto', maxResults = 10 } = options;
+  
+  try {
+    console.log(`Searching books: "${query}" (provider: ${provider})`);
+    
+    // Auto mode: try enabled providers in order
+    if (provider === 'auto') {
+      for (const [key, config] of Object.entries(PROVIDERS)) {
+        if (config.enabled) {
+          console.log(`  Trying provider: ${config.name}`);
+          const results = await config.search(query, maxResults);
+          if (results && results.length > 0) {
+            console.log(`  ✓ Found ${results.length} results from ${config.name}`);
+            return results;
+          }
+        }
+      }
+      console.log('  No results found from any provider');
+      return [];
+    }
+    
+    // Specific provider requested
+    const config = PROVIDERS[provider];
+    if (!config) {
+      throw new Error(`Unknown provider: ${provider}`);
+    }
+    
+    if (!config.enabled) {
+      throw new Error(`Provider ${provider} is disabled`);
+    }
+    
+    return await config.search(query, maxResults);
+    
+  } catch (error) {
+    console.error('Book search error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Search for book details by title and author (legacy API for bulk upload)
  * @param {string} title - Book title
  * @param {string} author - Book author (optional)
  * @returns {Promise<Object|null>} Book details or null if not found
  */
 export async function searchBookDetails(title, author = '') {
   try {
-    console.log(`Searching for book: "${title}" by "${author}"`);
+    console.log(`Searching for book details: "${title}" by "${author}"`);
     
-    // Strategy 1: Search with both title and author
-    if (author) {
-      const result = await searchWithStrategy(title, author, 'title+author');
-      if (result && result.confidence >= 40) {
-        return result;
-      }
+    // Build search query
+    const query = author ? `${title} ${author}` : title;
+    
+    // Search using first enabled provider
+    const results = await searchBooks(query, { maxResults: 5 });
+    
+    if (!results || results.length === 0) {
+      return null;
     }
     
-    // Strategy 2: Search by title only (author might be misspelled/different language)
-    const titleOnlyResult = await searchWithStrategy(title, '', 'title-only');
-    if (titleOnlyResult) {
-      // If we have an author to compare, verify it's a reasonable match
-      if (author) {
-        const authorSimilarity = calculateAuthorSimilarity(
-          titleOnlyResult.author,
-          author
-        );
-        
-        // Accept if author is somewhat similar (>30%) or if book details are very complete
-        if (authorSimilarity > 0.3 || titleOnlyResult.confidence >= 70) {
-          console.log(`Found via title-only search (author similarity: ${Math.round(authorSimilarity * 100)}%)`);
-          return titleOnlyResult;
-        }
-      } else {
-        return titleOnlyResult;
-      }
-    }
+    // Find best match
+    const bestMatch = findBestMatch(results, title, author);
+    return bestMatch;
     
-    // Strategy 3: Try broader search with partial title
-    if (title.length > 10) {
-      const partialTitle = title.split(' ').slice(0, 3).join(' '); // First 3 words
-      const broadResult = await searchWithStrategy(partialTitle, '', 'broad-title');
-      if (broadResult) {
-        // Verify the full title is similar
-        const titleSimilarity = calculateSimilarity(
-          normalizeString(broadResult.title),
-          normalizeString(title)
-        );
-        
-        if (titleSimilarity > 0.6) {
-          console.log(`Found via broad search (title similarity: ${Math.round(titleSimilarity * 100)}%)`);
-          return broadResult;
-        }
-      }
-    }
-    
-    console.log(`No results found for: ${title}`);
-    return null;
-
   } catch (error) {
-    console.error('Book search error:', error);
+    console.error('Book details search error:', error);
     return null;
   }
 }
 
 /**
- * Search with a specific strategy
- * @param {string} title - Book title
- * @param {string} author - Book author
- * @param {string} strategy - Strategy name for logging
- * @returns {Promise<Object|null>} Book details or null
+ * Search Simania API
  */
-async function searchWithStrategy(title, author, strategy) {
-  const maxRetries = 3;
-  let lastError;
+async function searchSimania(query, maxResults = 10) {
+  try {
+    const url = `${SIMANIA_API}?query=${encodeURIComponent(query)}&page=1`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.warn(`Simania API error: ${response.status}`);
+      return [];
+    }
+    
+    const data = await response.json();
+    
+    if (!data.success || !data.data?.books || data.data.books.length === 0) {
+      return [];
+    }
+    
+    // Map Simania results to our format
+    const results = data.data.books.slice(0, maxResults).map(book => ({
+      title: book.NAME || '',
+      author: book.AUTHOR || '',
+      publisher: book.PUBLISHER || null,
+      publish_year: book.YEAR || book.bookYear || null,
+      pages: book.PAGES || null,
+      description: book.DESCRIPTION || null,
+      cover_image_url: book.COVER || book.imageLink ? `https://simania.co.il${book.imageLink}` : null,
+      isbn: book.ISBN || null,
+      genre: book.CATEGORY || null,
+      series: book.SERIES || null,
+      series_number: book.seriesNumber ? parseSeriesNumber(book.seriesNumber) : null,
+      language: 'he', // Simania is Hebrew
+      source: 'Simania',
+      confidence: 85 // High confidence for direct matches
+    }));
+    
+    return results;
+    
+  } catch (error) {
+    console.error('Simania search error:', error);
+    return [];
+  }
+}
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      // Normalize title and author for search (remove niqqud, etc.)
-      const normalizedTitle = normalizeString(title);
-      const normalizedAuthor = author ? normalizeString(author) : '';
+/**
+ * Search Google Books API (kept for future use)
+ */
+async function searchGoogleBooks(query, maxResults = 10) {
+  try {
+    const url = `${GOOGLE_BOOKS_API}?q=${encodeURIComponent(query)}&maxResults=${maxResults}&langRestrict=he,en`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.warn(`Google Books API error: ${response.status}`);
+      return [];
+    }
+    
+    const data = await response.json();
+    
+    if (!data.items || data.items.length === 0) {
+      return [];
+    }
+    
+    // Map Google Books results to our format
+    const results = data.items.map(item => {
+      const volumeInfo = item.volumeInfo;
+      const { series, seriesNumber } = extractSeriesInfo(volumeInfo);
       
-      // Build search query with normalized text
-      const query = normalizedAuthor 
-        ? `intitle:${normalizedTitle}+inauthor:${normalizedAuthor}`
-        : `intitle:${normalizedTitle}`;
-
-      const url = `${GOOGLE_BOOKS_API}?q=${encodeURIComponent(query)}&maxResults=10&langRestrict=he,en`;
-
-      if (attempt > 1) {
-        console.log(`  Strategy [${strategy}] attempt ${attempt}/${maxRetries}: ${query}`);
-      } else {
-        console.log(`  Strategy [${strategy}]: ${query}`);
-      }
-
-      const response = await fetch(url);
-      
-      // Handle rate limiting and server errors with retry
-      if (response.status === 429 || response.status === 503 || response.status >= 500) {
-        const errorMsg = `Google Books API ${response.status} error`;
-        console.warn(`  ${errorMsg} - attempt ${attempt}/${maxRetries}`);
-        
-        if (attempt < maxRetries) {
-          const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-          console.log(`  Waiting ${delay}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-        
-        lastError = new Error(errorMsg);
-        break;
-      }
-      
-      if (!response.ok) {
-        console.warn(`  Google Books API error: ${response.status}`);
-        return null;
-      }
-
-      const data = await response.json();
-
-      if (!data.items || data.items.length === 0) {
-        console.log(`  No results for strategy: ${strategy}`);
-        return null;
-      }
-
-      // Find the best match
-      const bestMatch = findBestMatch(data.items, title, author);
-
-      if (!bestMatch) {
-        return null;
-      }
-
-      const volumeInfo = bestMatch.volumeInfo;
-      const apiAuthor = volumeInfo.authors?.[0] || '';
-      const { series: detectedSeries, seriesNumber } = extractSeriesInfo(volumeInfo);
-
-      // Preserve original author language if provided
-      // Strongly prefer Hebrew input over English transliterations from API
-      let finalAuthor = author || apiAuthor;
-      if (author && apiAuthor) {
-        const hasHebrew = /[\u0590-\u05FF]/.test(author);
-        const apiHasHebrew = /[\u0590-\u05FF]/.test(apiAuthor);
-        
-        if (hasHebrew && !apiHasHebrew) {
-          // Input is Hebrew, API is not - always prefer Hebrew
-          finalAuthor = author;
-          console.log(`  Preserving Hebrew author "${author}" over API "${apiAuthor}"`);
-        } else if (!hasHebrew && apiHasHebrew) {
-          // Input is not Hebrew, API is - prefer API
-          finalAuthor = apiAuthor;
-          console.log(`  Using Hebrew API author "${apiAuthor}" over input "${author}"`);
-        } else {
-          // Both same script - check similarity
-          const authorSim = calculateAuthorSimilarity(author, apiAuthor);
-          if (authorSim < 0.5) {
-            finalAuthor = apiAuthor;
-            console.log(`  Using API author "${apiAuthor}" instead of input "${author}" (low similarity: ${Math.round(authorSim * 100)}%)`);
-          } else {
-            console.log(`  Preserving input author "${author}" (similarity: ${Math.round(authorSim * 100)}%)`);
-          }
-        }
-      }
-
-      // Preserve Hebrew title if provided
-      const apiTitle = volumeInfo.title || title;
-      let finalTitle = title;
-      if (title && volumeInfo.title) {
-        const hasHebrewTitle = /[\u0590-\u05FF]/.test(title);
-        const apiHasHebrewTitle = /[\u0590-\u05FF]/.test(volumeInfo.title);
-        
-        if (!hasHebrewTitle && apiHasHebrewTitle) {
-          // Input is not Hebrew but API has Hebrew - prefer API
-          finalTitle = volumeInfo.title;
-          console.log(`  Using Hebrew API title "${volumeInfo.title}" over input "${title}"`);
-        } else if (hasHebrewTitle) {
-          // Input is Hebrew - prefer it
-          finalTitle = title;
-          console.log(`  Preserving Hebrew title "${title}"`);
-        } else {
-          // Both non-Hebrew or API has no title - use API if available
-          finalTitle = volumeInfo.title || title;
-        }
-      } else {
-        finalTitle = apiTitle;
-      }
-
-      // Extract book details
-      const bookDetails = {
-        title: finalTitle,
-        author: finalAuthor,
+      return {
+        title: volumeInfo.title || '',
+        author: volumeInfo.authors?.[0] || '',
         publisher: volumeInfo.publisher || null,
         publish_year: volumeInfo.publishedDate ? parseInt(volumeInfo.publishedDate.substring(0, 4)) : null,
         pages: volumeInfo.pageCount || null,
@@ -205,166 +178,74 @@ async function searchWithStrategy(title, author, strategy) {
               volumeInfo.industryIdentifiers?.find(id => id.type === 'ISBN_10')?.identifier || 
               null,
         genre: mapCategories(volumeInfo.categories),
-        age_range: inferAgeRange(volumeInfo),
         language: volumeInfo.language || null,
-        series: detectedSeries,
+        series,
         series_number: seriesNumber,
-        confidence: calculateConfidence(bestMatch, title, author)
+        source: 'Google Books',
+        confidence: 75
       };
-
-      console.log(`  ✓ Found: ${bookDetails.title} by ${bookDetails.author} (confidence: ${bookDetails.confidence})`);
-
-      return bookDetails;
-
-    } catch (error) {
-      lastError = error;
-      console.error(`  Strategy [${strategy}] attempt ${attempt} error:`, error.message);
-      
-      // Retry on network errors
-      if (error.message?.includes('fetch failed') || error.code === 'ECONNRESET' || 
-          error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
-        console.error('  Network error - retrying...');
-        if (attempt < maxRetries) {
-          const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-          console.log(`  Waiting ${delay}ms before retry...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-      }
-      
-      // Don't retry for other errors
-      break;
-    }
+    });
+    
+    return results;
+    
+  } catch (error) {
+    console.error('Google Books search error:', error);
+    return [];
   }
-  
-  if (lastError) {
-    console.error(`  Strategy [${strategy}] failed after ${maxRetries} attempts`);
-  }
-  return null;
 }
 
 /**
  * Find the best matching book from search results
  */
-function findBestMatch(items, searchTitle, searchAuthor) {
-  if (!items || items.length === 0) return null;
+function findBestMatch(results, searchTitle, searchAuthor) {
+  if (!results || results.length === 0) return null;
 
   const normalizedSearchTitle = normalizeString(searchTitle);
   const normalizedSearchAuthor = normalizeString(searchAuthor);
 
-  let bestMatch = items[0];
+  let bestMatch = results[0];
   let highestScore = 0;
 
-  for (const item of items) {
-    const volumeInfo = item.volumeInfo;
-    const title = normalizeString(volumeInfo.title || '');
-    const author = normalizeString(volumeInfo.authors?.[0] || '');
+  for (const book of results) {
+    const title = normalizeString(book.title || '');
+    const author = normalizeString(book.author || '');
 
     let score = 0;
 
     // Title similarity (most important)
     if (title === normalizedSearchTitle) {
-      score += 60; // Exact match
+      score += 60;
     } else if (title.includes(normalizedSearchTitle) || normalizedSearchTitle.includes(title)) {
       score += 50;
     } else {
       const titleSim = calculateSimilarity(title, normalizedSearchTitle);
-      if (titleSim > 0.8) {
-        score += 45;
-      } else if (titleSim > 0.6) {
-        score += 30;
-      } else if (titleSim > 0.4) {
-        score += 15;
-      }
+      if (titleSim > 0.8) score += 45;
+      else if (titleSim > 0.6) score += 30;
+      else if (titleSim > 0.4) score += 15;
     }
 
-    // Author similarity (more lenient for different spellings/languages)
+    // Author similarity
     if (searchAuthor && author) {
       const authorSim = calculateAuthorSimilarity(author, searchAuthor);
-      
-      if (authorSim > 0.9) {
-        score += 30; // Very similar author
-      } else if (authorSim > 0.7) {
-        score += 25; // Similar author (different spelling/language)
-      } else if (authorSim > 0.5) {
-        score += 15; // Somewhat similar
-      } else if (authorSim > 0.3) {
-        score += 5; // Might be related
-      }
-    } else if (!searchAuthor && author) {
-      // No author provided but book has author - small bonus
-      score += 5;
+      if (authorSim > 0.9) score += 30;
+      else if (authorSim > 0.7) score += 25;
+      else if (authorSim > 0.5) score += 15;
+      else if (authorSim > 0.3) score += 5;
     }
 
     // Data quality bonuses
-    if (volumeInfo.industryIdentifiers?.length > 0) {
-      score += 10; // Has ISBN
-    }
-
-    if (volumeInfo.imageLinks?.thumbnail) {
-      score += 5; // Has cover image
-    }
-
-    if (volumeInfo.description && volumeInfo.description.length > 100) {
-      score += 5; // Has substantial description
-    }
-    
-    // Language preference bonus (Hebrew or English)
-    if (volumeInfo.language === 'he' || volumeInfo.language === 'en') {
-      score += 3;
-    }
+    if (book.isbn) score += 10;
+    if (book.cover_image_url) score += 5;
+    if (book.description && book.description.length > 100) score += 5;
 
     if (score > highestScore) {
       highestScore = score;
-      bestMatch = item;
+      bestMatch = book;
     }
   }
 
   console.log(`  Best match score: ${highestScore}`);
   return bestMatch;
-}
-
-/**
- * Calculate confidence score (0-100)
- */
-function calculateConfidence(item, searchTitle, searchAuthor) {
-  const volumeInfo = item.volumeInfo;
-  const title = normalizeString(volumeInfo.title || '');
-  const author = normalizeString(volumeInfo.authors?.[0] || '');
-  const normalizedSearchTitle = normalizeString(searchTitle);
-  const normalizedSearchAuthor = normalizeString(searchAuthor);
-
-  let confidence = 0;
-
-  // Exact title match
-  if (title === normalizedSearchTitle) {
-    confidence += 50;
-  } else if (title.includes(normalizedSearchTitle) || normalizedSearchTitle.includes(title)) {
-    confidence += 35;
-  } else {
-    confidence += calculateSimilarity(title, normalizedSearchTitle) * 30;
-  }
-
-  // Author match (if provided)
-  if (searchAuthor && author) {
-    if (author === normalizedSearchAuthor) {
-      confidence += 30;
-    } else if (author.includes(normalizedSearchAuthor) || normalizedSearchAuthor.includes(author)) {
-      confidence += 20;
-    } else {
-      confidence += calculateSimilarity(author, normalizedSearchAuthor) * 15;
-    }
-  } else if (!searchAuthor) {
-    // No author to compare, give moderate confidence
-    confidence += 15;
-  }
-
-  // Data quality bonus
-  if (volumeInfo.industryIdentifiers?.length > 0) confidence += 10;
-  if (volumeInfo.imageLinks?.thumbnail) confidence += 5;
-  if (volumeInfo.description) confidence += 5;
-
-  return Math.min(100, Math.round(confidence));
 }
 
 /**
@@ -513,48 +394,6 @@ function mapCategories(categories) {
   for (const [key, value] of Object.entries(categoryMap)) {
     if (category.includes(key)) {
       return value;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Infer age range from book info
- */
-function inferAgeRange(volumeInfo) {
-  const categories = volumeInfo.categories || [];
-  const title = volumeInfo.title?.toLowerCase() || '';
-  const description = volumeInfo.description?.toLowerCase() || '';
-
-  for (const category of categories) {
-    const cat = category.toLowerCase();
-    if (cat.includes('juvenile') || cat.includes('children')) {
-      return 'ילדים';
-    }
-    if (cat.includes('young adult')) {
-      return 'נוער';
-    }
-  }
-
-  // Check maturity rating
-  if (volumeInfo.maturityRating === 'MATURE') {
-    return 'מבוגרים';
-  }
-
-  // Check description and title keywords
-  const childKeywords = ['children', 'kids', 'ילדים'];
-  const teenKeywords = ['young adult', 'teen', 'נוער'];
-
-  for (const keyword of childKeywords) {
-    if (title.includes(keyword) || description.includes(keyword)) {
-      return 'ילדים';
-    }
-  }
-
-  for (const keyword of teenKeywords) {
-    if (title.includes(keyword) || description.includes(keyword)) {
-      return 'נוער';
     }
   }
 

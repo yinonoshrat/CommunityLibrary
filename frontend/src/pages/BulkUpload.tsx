@@ -24,6 +24,19 @@ import { useAuth } from '../contexts/AuthContext';
 interface DetectedBook {
   title: string;
   author: string;
+  publisher?: string;
+  publish_year?: number;
+  pages?: number;
+  description?: string;
+  cover_image_url?: string;
+  isbn?: string;
+  genre?: string;
+  age_range?: string;
+  language?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  confidenceScore?: number;
+  series?: string;
+  series_number?: number | null;
   selected?: boolean;
   tempId?: string;
 }

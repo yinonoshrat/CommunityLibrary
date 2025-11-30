@@ -15,7 +15,6 @@ import {
 } from '@mui/material';
 import {
   Search as SearchIcon,
-  People as PeopleIcon,
   LibraryBooks,
   TrendingUp,
   TrendingDown,
@@ -278,7 +277,16 @@ export default function Home() {
           </Button>
         </Box>
         
-        <Box sx={{ maxWidth: 800, mx: 'auto', mt: 2, textAlign: 'center' }}>
+        <Box sx={{ maxWidth: 800, mx: 'auto', mt: 2, textAlign: 'center', display: 'flex', gap: 2, justifyContent: 'center' }}>
+          <Button
+            data-testid="add-books-button"
+            variant="contained"
+            size="medium"
+            startIcon={<LibraryBooks />}
+            onClick={() => navigate('/books/add')}
+          >
+            הוספת ספרים
+          </Button>
           <Button
             data-testid="recommendations-button"
             variant="outlined"
@@ -301,18 +309,22 @@ export default function Home() {
             <CircularProgress />
           </Box>
         ) : (
-          <Card>
-            <CardContent>
-              <Grid container spacing={3}>
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <Box
-                    display="flex"
-                    alignItems="center"
-                    gap={2}
-                    data-testid="books-lent-card"
-                    sx={{ cursor: 'pointer' }}
-                    onClick={() => navigate('/books?view=my&status=on_loan')}
-                  >
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Card
+                data-testid="books-lent-card"
+                sx={{
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: 4,
+                  },
+                }}
+                onClick={() => navigate('/books?view=my&status=on_loan')}
+              >
+                <CardContent>
+                  <Box display="flex" alignItems="center" gap={2}>
                     <Box
                       sx={{
                         p: 1.5,
@@ -330,16 +342,24 @@ export default function Home() {
                       </Typography>
                     </Box>
                   </Box>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <Box
-                    display="flex"
-                    alignItems="center"
-                    gap={2}
-                    data-testid="books-borrowed-card"
-                    sx={{ cursor: 'pointer' }}
-                    onClick={() => navigate('/books?view=borrowed')}
-                  >
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Card
+                data-testid="books-borrowed-card"
+                sx={{
+                  cursor: 'pointer',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: 4,
+                  },
+                }}
+                onClick={() => navigate('/books?view=borrowed')}
+              >
+                <CardContent>
+                  <Box display="flex" alignItems="center" gap={2}>
                     <Box
                       sx={{
                         p: 1.5,
@@ -357,74 +377,11 @@ export default function Home() {
                       </Typography>
                     </Box>
                   </Box>
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
         )}
-      </Box>
-
-      {/* Management Actions */}
-      <Box mb={4}>
-        <Typography variant="h6" gutterBottom>
-          ניהול
-        </Typography>
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <Card
-              data-testid="books-management-card"
-              sx={{
-                height: '100%',
-                cursor: 'pointer',
-                transition: 'transform 0.2s, box-shadow 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: 4,
-                },
-              }}
-              onClick={() => navigate('/books')}
-            >
-              <CardContent>
-                <Box display="flex" flexDirection="column" alignItems="center" textAlign="center">
-                  <LibraryBooks sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-                  <Typography variant="h6" gutterBottom>
-                    הספרים שלי
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    הוסף, ערוך ומחק ספרים מהקטלוג המשפחתי
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <Card
-              data-testid="family-management-card"
-              sx={{
-                height: '100%',
-                cursor: 'pointer',
-                transition: 'transform 0.2s, box-shadow 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: 4,
-                },
-              }}
-              onClick={() => navigate('/family')}
-            >
-              <CardContent>
-                <Box display="flex" flexDirection="column" alignItems="center" textAlign="center">
-                  <PeopleIcon sx={{ fontSize: 48, color: 'success.main', mb: 2 }} />
-                  <Typography variant="h6" gutterBottom>
-                    ניהול המשפחה
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    נהל את פרטי המשפחה וחברי הקהילה
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
       </Box>
 
        {/* Catalog Summary */}
@@ -515,6 +472,107 @@ export default function Home() {
             </Grid>
           </Grid>
         )}
+      </Box>
+
+      {/* How It Works Section */}
+      <Box mt={8} mb={4}>
+        <Typography variant="h5" component="h2" gutterBottom textAlign="center" sx={{ mb: 4 }}>
+          איך זה עובד?
+        </Typography>
+        <Grid container spacing={4} direction="row-reverse">
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Card sx={{ height: '100%', textAlign: 'center' }}>
+              <CardContent>
+                <Box
+                  sx={{
+                    width: 80,
+                    height: 80,
+                    borderRadius: '50%',
+                    bgcolor: 'primary.light',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 2,
+                  }}
+                >
+                  <Typography variant="h3" component="span" sx={{ color: 'primary.main', fontWeight: 'bold' }}>
+                    1
+                  </Typography>
+                </Box>
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
+                  הוסיפו את הספרים שלכם
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  צרו קטלוג דיגיטלי של ספריית הבית שלכם. הוסיפו פרטים על הספרים, תמונות ותיאורים. כל הספרים
+                  יהיו נגישים לחיפוש במערכת הקהילתית.
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Card sx={{ height: '100%', textAlign: 'center' }}>
+              <CardContent>
+                <Box
+                  sx={{
+                    width: 80,
+                    height: 80,
+                    borderRadius: '50%',
+                    bgcolor: 'success.light',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 2,
+                  }}
+                >
+                  <Typography variant="h3" component="span" sx={{ color: 'success.main', fontWeight: 'bold' }}>
+                    2
+                  </Typography>
+                </Box>
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
+                  גלו ספרים בקהילה
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  חפשו ספרים מעניינים בקרב משפחות אחרות בקהילה. ראו מי מחזיק בספר שאתם מחפשים, קבלו המלצות
+                  ומצאו ספרים חדשים שלא הכרתם.
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Card sx={{ height: '100%', textAlign: 'center' }}>
+              <CardContent>
+                <Box
+                  sx={{
+                    width: 80,
+                    height: 80,
+                    borderRadius: '50%',
+                    bgcolor: 'info.light',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mx: 'auto',
+                    mb: 2,
+                  }}
+                >
+                  <Typography variant="h3" component="span" sx={{ color: 'info.main', fontWeight: 'bold' }}>
+                    3
+                  </Typography>
+                </Box>
+                <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
+                  שאלו והשאילו
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  פנו למשפחות אחרות לשאילת ספרים, נהלו את ההשאלות בצורה נוחה ומסודרת. השאילו גם את הספרים שלכם
+                  לאחרים וחזקו את הקהילה הקוראת!
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
       </Box>
     </Container>
   );
