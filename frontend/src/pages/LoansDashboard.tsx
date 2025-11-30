@@ -67,6 +67,7 @@ const toCatalogBook = (loan: LoanRecord, viewerFamilyId: string | null): Catalog
     genre: bookInfo.genre,
     ageRange: bookInfo.age_range,
     coverImageUrl: bookInfo.cover_image_url,
+    likesCount: 0,
     stats: {
       totalCopies: 1,
       availableCopies: 1,
