@@ -19,6 +19,8 @@ export interface BookSearchResult {
   series_number?: number | null;
   language?: string;
   confidence?: number;
+  catalogId?: string;
+  alreadyOwned?: boolean;
 }
 
 export interface SearchOptions {
@@ -26,6 +28,8 @@ export interface SearchOptions {
   provider?: string;
   /** Maximum number of results to return */
   maxResults?: number;
+  /** User ID to check for owned books */
+  userId?: string;
 }
 
 /**
@@ -42,6 +46,7 @@ export async function searchBooks(
   const {
     provider = 'auto',
     maxResults = 10,
+    userId
   } = options;
 
   if (!query.trim()) {
@@ -54,6 +59,10 @@ export async function searchBooks(
       provider,
       maxResults: maxResults.toString()
     });
+
+    if (userId) {
+      params.append('userId', userId);
+    }
 
     const response = await fetch(`/api/search-books?${params.toString()}`);
     

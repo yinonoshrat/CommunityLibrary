@@ -136,7 +136,7 @@ export default function LoanCard({ loan, type, onReturn }: LoanCardProps) {
                   onClick={handleWhatsApp}
                   sx={{ color: '#25D366' }}
                 >
-                  <WhatsAppIcon fontSize="small" />
+                  <WhatsAppIcon sx={{ fontSize: 20 }} />
                 </IconButton>
               </Box>
             )}

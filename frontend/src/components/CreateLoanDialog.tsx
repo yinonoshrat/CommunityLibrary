@@ -97,13 +97,19 @@ export default function CreateLoanDialog({
         }),
       });
 
-      const data = await response.json();
-
       if (response.ok) {
+        const data = await response.json();
         onSuccess();
         handleClose();
       } else {
-        setError(data.error || 'שגיאה ביצירת ההשאלה');
+        let errorMessage = 'שגיאה ביצירת ההשאלה';
+        try {
+          const data = await response.json();
+          errorMessage = data.error || errorMessage;
+        } catch {
+          // Failed to parse error response as JSON
+        }
+        setError(errorMessage);
       }
     } catch (err) {
       console.error('Error creating loan:', err);

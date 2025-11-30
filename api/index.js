@@ -144,7 +144,7 @@ app.get('/api/health', (req, res) => {
 // Book search endpoint
 app.get('/api/search-books', async (req, res) => {
   try {
-    const { q, query, provider = 'auto', maxResults = 10 } = req.query;
+    const { q, query, provider = 'auto', maxResults = 10, userId } = req.query;
     
     // Support both 'q' and 'query' parameters
     const searchQuery = q || query;
@@ -158,17 +158,68 @@ app.get('/api/search-books', async (req, res) => {
     
     console.log(`Book search request: "${searchQuery}" (provider: ${provider})`);
     
-    const results = await searchBooks(searchQuery, { 
+    // First, search our own catalog
+    const { data: catalogResults, error: catalogError } = await supabase
+      .from('book_catalog')
+      .select('*')
+      .or(`title.ilike.%${searchQuery}%,author.ilike.%${searchQuery}%`)
+      .limit(10);
+    
+    if (catalogError) {
+      console.error('Catalog search error:', catalogError);
+    }
+    
+    // If user ID provided, check which books they already own
+    let userOwnedBookIds = new Set();
+    if (userId && catalogResults?.length > 0) {
+      const { data: userBooks, error: userBooksError } = await supabase
+        .from('family_books')
+        .select('book_catalog_id, families!inner(users!inner(id))')
+        .eq('families.users.id', userId);
+      
+      if (!userBooksError && userBooks) {
+        userOwnedBookIds = new Set(userBooks.map(b => b.book_catalog_id));
+      }
+    }
+    
+    // Transform catalog results to match external API format
+    const catalogBooks = (catalogResults || []).map(book => ({
+      title: book.title,
+      author: book.author,
+      series: book.series,
+      series_number: book.series_number,
+      publisher: book.publisher,
+      publish_year: book.year_published,
+      pages: book.pages,
+      description: book.summary,
+      cover_image_url: book.cover_image_url,
+      isbn: book.isbn,
+      genre: book.genre,
+      language: 'he',
+      source: 'catalog',
+      catalogId: book.id,
+      alreadyOwned: userOwnedBookIds.has(book.id),
+      confidence: 'exact',
+      confidenceScore: 100
+    }));
+    
+    // Search external sources
+    const externalResults = await searchBooks(searchQuery, { 
       provider, 
       maxResults: parseInt(maxResults) 
     });
+    
+    // Combine results: catalog first, then external
+    const allResults = [...catalogBooks, ...externalResults];
     
     res.json({
       success: true,
       query: searchQuery,
       provider,
-      count: results.length,
-      results
+      count: allResults.length,
+      catalogCount: catalogBooks.length,
+      externalCount: externalResults.length,
+      results: allResults
     });
     
   } catch (error) {
@@ -1020,6 +1071,8 @@ app.get('/api/loans/:id', async (req, res) => {
 
 app.post('/api/loans', async (req, res) => {
   try {
+    console.log('Creating loan with payload:', req.body);
+    
     // Convert book_id to family_book_id if needed
     if (req.body.book_id && !req.body.family_book_id) {
       req.body.family_book_id = req.body.book_id
@@ -1029,14 +1082,19 @@ app.post('/api/loans', async (req, res) => {
     req.body.status = 'active'
     
     const loan = await db.loans.create(req.body);
+    console.log('Loan created:', loan);
     
     // Update book status to on_loan
     const bookId = req.body.family_book_id || req.body.book_id
+    console.log('Updating book status for:', bookId);
     await db.books.update(bookId, { status: 'on_loan' });
+    console.log('Book status updated');
     
     res.status(201).json({ loan });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error('Error creating loan:', error);
+    console.error('Error details:', error.message, error.code, error.details);
+    res.status(500).json({ error: error.message || 'Failed to create loan' });
   }
 });
 

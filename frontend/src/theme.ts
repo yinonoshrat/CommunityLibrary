@@ -117,6 +117,14 @@ export const theme = createTheme(
             padding: '8px 22px',
             minHeight: '40px',
           },
+          startIcon: {
+            marginLeft: '8px',
+            marginRight: '-4px',
+          },
+          endIcon: {
+            marginRight: '8px',
+            marginLeft: '-4px',
+          },
         },
       },
       // Compact select dropdowns

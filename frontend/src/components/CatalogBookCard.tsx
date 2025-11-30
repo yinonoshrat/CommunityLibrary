@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import {
   Card,
   CardActionArea,
@@ -19,12 +19,15 @@ import {
   Favorite as FavoriteIcon,
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import LikeButton from './LikeButton'
+import CreateLoanDialog from './CreateLoanDialog'
 import type { CatalogBook, BookLoanSummary } from '../types'
 
 interface CatalogBookCardProps {
   book: CatalogBook
   onMarkReturned?: (args: { book: CatalogBook; loan: BookLoanSummary }) => void
+  onLoanSuccess?: () => void
 }
 
 const FORMATTER = new Intl.DateTimeFormat('he-IL', { dateStyle: 'medium' })
@@ -43,11 +46,33 @@ const getPrimaryFamilyBookId = (book: CatalogBook) => {
   return book.owners[0]?.familyBookId
 }
 
-export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCardProps) {
+export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }: CatalogBookCardProps) {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const [loanDialogOpen, setLoanDialogOpen] = useState(false)
+  const [userFamilyId, setUserFamilyId] = useState<string>('')
   const primaryFamilyBookId = useMemo(() => getPrimaryFamilyBookId(book), [book])
   const viewerLoan = book.viewerContext.borrowedLoan
   const viewerOwnedCopy = book.viewerContext.ownedCopies[0]
+
+  // Fetch user's family ID
+  useEffect(() => {
+    const fetchUserFamily = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const response = await fetch(`/api/users/${user.id}`);
+        const data = await response.json();
+        if (data.user?.family_id) {
+          setUserFamilyId(data.user.family_id);
+        }
+      } catch (err) {
+        console.error('Failed to fetch user family:', err);
+      }
+    };
+    
+    fetchUserFamily();
+  }, [user?.id]);
 
   const handleNavigate = () => {
     if (primaryFamilyBookId) {
@@ -58,6 +83,11 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
   const handleMarkReturned = () => {
     if (!viewerOwnedCopy?.loan || !onMarkReturned) return
     onMarkReturned({ book, loan: viewerOwnedCopy.loan })
+  }
+
+  const handleLoanSuccess = () => {
+    setLoanDialogOpen(false)
+    if (onLoanSuccess) onLoanSuccess()
   }
 
   return (
@@ -99,15 +129,6 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
           )}
           <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ gap: 0.5 }}>
             <Chip label={`${book.stats.availableCopies}/${book.stats.totalCopies}`} size="small" color={book.stats.availableCopies > 0 ? 'success' : 'default'} />
-            {book.likesCount > 0 && (
-              <Chip 
-                icon={<FavoriteIcon sx={{ fontSize: 14 }} />} 
-                label={book.likesCount} 
-                size="small" 
-                color="error" 
-                variant="outlined"
-              />
-            )}
             {book.viewerContext.owns && (
               <Chip label="שלי" size="small" color="primary" />
             )}
@@ -142,7 +163,10 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
               <Button
                 variant="contained"
                 color="success"
-                onClick={() => navigate(`/loans/new?bookId=${viewerOwnedCopy.familyBookId}`)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setLoanDialogOpen(true)
+                }}
                 fullWidth
                 size="small"
               >
@@ -169,7 +193,7 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
                     if (phone) window.open(`https://wa.me/${phone}`, '_blank')
                   }}
                 >
-                  <WhatsAppIcon fontSize="small" />
+                  <WhatsAppIcon sx={{ fontSize: 20 }} />
                 </IconButton>
               )}
               {viewerLoan.ownerFamily?.phone && (
@@ -188,7 +212,7 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
           </Box>
         )}
 
-        {!book.viewerContext.owns && book.owners.length > 0 && (
+        {!book.viewerContext.owns && !book.viewerContext.borrowed && book.owners.length > 0 && (
           <Box sx={{ direction: 'rtl' }}>
             <Divider sx={{ my: 1 }} />
             <Typography variant="body2" color="text.secondary" display="block" gutterBottom fontWeight={500}>
@@ -219,12 +243,7 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
                         if (phone) window.open(`https://wa.me/${phone}`, '_blank')
                       }}
                       sx={{ 
-                        p: 0.5,
-                        bgcolor: 'success.light',
-                        color: 'white',
-                        '&:hover': {
-                          bgcolor: 'success.main',
-                        }
+                        color: '#25D366'
                       }}
                     >
                       <WhatsAppIcon sx={{ fontSize: 20 }} />
@@ -267,6 +286,22 @@ export default function CatalogBookCard({ book, onMarkReturned }: CatalogBookCar
           <LikeButton bookId={primaryFamilyBookId} size="small" showCount />
         )}
       </Box>
+
+      {/* Create Loan Dialog */}
+      {viewerOwnedCopy && user?.id && userFamilyId && (
+        <CreateLoanDialog
+          open={loanDialogOpen}
+          onClose={() => setLoanDialogOpen(false)}
+          book={{
+            id: viewerOwnedCopy.familyBookId,
+            title: book.title || '',
+            author: book.author || '',
+          }}
+          userFamilyId={userFamilyId}
+          userId={user.id}
+          onSuccess={handleLoanSuccess}
+        />
+      )}
     </Card>
   )
 }

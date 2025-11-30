@@ -540,7 +540,10 @@ export const db = {
         .insert(loan)
         .select()
         .single()
-      if (error) throw error
+      if (error) {
+        console.error('Supabase error creating loan:', error);
+        throw error;
+      }
       return data
     },
 

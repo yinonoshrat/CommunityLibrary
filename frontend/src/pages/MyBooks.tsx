@@ -193,7 +193,7 @@ export default function MyBooks() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Box mb={3} display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
+      <Box mb={3} display="flex" flexDirection="column" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
         <Box>
           <Typography variant="h4" component="h1" gutterBottom>
             {view === 'all' ? 'קטלוג הקהילה' : 'הספרים שלי'}

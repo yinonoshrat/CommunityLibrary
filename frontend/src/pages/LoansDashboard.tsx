@@ -204,7 +204,7 @@ export default function LoansDashboard() {
           היסטוריית השאלות
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          כל הספרים שהשאלתם או השאלתם בעבר
+          כל הספרים ששאלתם או השאלתם בעבר
         </Typography>
       </Box>
 

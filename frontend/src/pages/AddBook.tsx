@@ -169,9 +169,10 @@ export default function AddBook() {
     setSearchResults([]);
     
     try {
-      // Use the searchBooks utility
+      // Use the searchBooks utility with userId to check ownership
       const results = await searchBooks(searchQuery, {
         maxResults: 10,
+        userId: user?.id,
       });
       
       if (results.length === 0) {
@@ -994,8 +995,53 @@ export default function AddBook() {
             <Grid container spacing={2}>
               {searchResults.map((book, index) => (
                 <Grid size={{ xs: 12, sm: 6, md: 4 }} key={index}>
-                  <Card>
-                    <CardActionArea onClick={() => handleSelectBook(book)}>
+                  <Card sx={{ position: 'relative', opacity: book.alreadyOwned ? 0.6 : 1 }}>
+                    {book.alreadyOwned && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 8,
+                          right: 8,
+                          zIndex: 1,
+                          bgcolor: 'info.main',
+                          color: 'white',
+                          px: 1,
+                          py: 0.5,
+                          borderRadius: 1,
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5,
+                        }}
+                      >
+                        <CheckIcon sx={{ fontSize: 16 }} />
+                        כבר בספריה
+                      </Box>
+                    )}
+                    {book.source === 'catalog' && !book.alreadyOwned && (
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 8,
+                          right: 8,
+                          zIndex: 1,
+                          bgcolor: 'success.main',
+                          color: 'white',
+                          px: 1,
+                          py: 0.5,
+                          borderRadius: 1,
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        בקטלוג
+                      </Box>
+                    )}
+                    <CardActionArea 
+                      onClick={() => handleSelectBook(book)}
+                      disabled={book.alreadyOwned}
+                    >
                       {book.cover_image_url && (
                         <CardMedia
                           component="img"
@@ -1018,8 +1064,13 @@ export default function AddBook() {
                           </Typography>
                         )}
                         <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-                          מקור: {book.source}
+                          מקור: {book.source === 'catalog' ? 'קטלוג משותף' : book.source}
                         </Typography>
+                        {book.alreadyOwned && (
+                          <Typography variant="caption" display="block" color="info.main" fontWeight={600}>
+                            הספר כבר נמצא בספריה שלך
+                          </Typography>
+                        )}
                       </CardContent>
                     </CardActionArea>
                   </Card>

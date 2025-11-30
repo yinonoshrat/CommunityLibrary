@@ -111,8 +111,8 @@ export default function FamilyAvailability({ bookId }: FamilyAvailabilityProps) 
                         edge="end"
                         onClick={() => handleContactClick(item.family.whatsapp, true)}
                         title="שלח הודעה בוואטסאפ"
-                      >
-                        <WhatsAppIcon />
+                      }}>
+                        <WhatsAppIcon sx={{ fontSize: 20 }} />
                       </IconButton>
                     )}
                     {item.family.phone && (
