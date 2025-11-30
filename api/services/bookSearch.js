@@ -117,22 +117,54 @@ async function searchSimania(query, maxResults = 10) {
     }
     
     // Map Simania results to our format
-    const results = data.data.books.slice(0, maxResults).map(book => ({
-      title: book.NAME || '',
-      author: book.AUTHOR || '',
-      publisher: book.PUBLISHER || null,
-      publish_year: book.YEAR || book.bookYear || null,
-      pages: book.PAGES || null,
-      description: book.DESCRIPTION || null,
-      cover_image_url: book.COVER || book.imageLink ? `https://simania.co.il${book.imageLink}` : null,
-      isbn: book.ISBN || null,
-      genre: book.CATEGORY || null,
-      series: book.SERIES || null,
-      series_number: book.seriesNumber ? parseSeriesNumber(book.seriesNumber) : null,
-      language: 'he', // Simania is Hebrew
-      source: 'Simania',
-      confidence: 85 // High confidence for direct matches
-    }));
+    const results = data.data.books.slice(0, maxResults).map(book => {
+      let coverImageUrl = null;
+      
+      // Handle different cover image URL formats from Simania
+      if (book.COVER) {
+        coverImageUrl = book.COVER;
+      } else if (book.imageLink) {
+        const imagePath = book.imageLink;
+        
+        // Check if it's a loadJpg.php URL and extract the direct image path
+        if (imagePath.includes('loadJpg.php')) {
+          try {
+            // Extract imageName parameter from URL like: /bookimages/loadJpg.php?imageName=covers0/1239.jpg
+            const match = imagePath.match(/[?&]imageName=([^&]+)/);
+            if (match && match[1]) {
+              // Convert to direct image URL
+              coverImageUrl = `https://simania.co.il/bookimages/${match[1]}`;
+            } else {
+              // Fallback: use the URL as-is
+              coverImageUrl = `https://simania.co.il${imagePath}`;
+            }
+          } catch (e) {
+            console.warn('Failed to parse loadJpg.php URL:', imagePath);
+            coverImageUrl = `https://simania.co.il${imagePath}`;
+          }
+        } else {
+          // Direct image URL
+          coverImageUrl = `https://simania.co.il${imagePath}`;
+        }
+      }
+      
+      return {
+        title: book.NAME || '',
+        author: book.AUTHOR || '',
+        publisher: book.PUBLISHER || null,
+        publish_year: book.YEAR || book.bookYear || null,
+        pages: book.PAGES || null,
+        description: book.DESCRIPTION || null,
+        cover_image_url: coverImageUrl,
+        isbn: book.ISBN || null,
+        genre: book.CATEGORY || null,
+        series: book.SERIES || null,
+        series_number: book.seriesNumber ? parseSeriesNumber(book.seriesNumber) : null,
+        language: 'he', // Simania is Hebrew
+        source: 'Simania',
+        confidence: 85 // High confidence for direct matches
+      };
+    });
     
     return results;
     
