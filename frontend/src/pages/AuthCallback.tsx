@@ -10,13 +10,17 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Exchange code for session
+        // Supabase automatically processes the hash fragment and creates a session
+        // We just need to wait a bit and then check for the session
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // Get the current session
         const { data: { session }, error: authError } = await supabase.auth.getSession()
         
         if (authError) throw authError
         
         if (!session) {
-          throw new Error('No session found')
+          throw new Error('לא נמצא session. נסה להתחבר שוב.')
         }
 
         // Check if user exists in our database
