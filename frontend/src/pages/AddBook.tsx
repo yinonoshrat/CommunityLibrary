@@ -517,12 +517,12 @@ export default function AddBook() {
             cover_image_url: newData.cover_image_url || b.cover_image_url,
             isbn: newData.isbn || b.isbn,
             genre: newData.genre || b.genre,
-            age_range: newData.age_range || b.age_range,
+            age_range: b.age_range, // Keep existing age_range, not available from search
             series: newData.series || b.series,
             series_number: newData.series_number ?? b.series_number,
             // Update confidence if we got good results
             confidence: 'high' as const,
-            confidenceScore: newData.confidenceScore || 90,
+            confidenceScore: newData.confidence || 90,
           };
         }));
         

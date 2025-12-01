@@ -15,12 +15,15 @@ import {
   Box,
   Typography
 } from '@mui/material';
-import type { Book } from '../types';
 
 interface CreateLoanDialogProps {
   open: boolean;
   onClose: () => void;
-  book: Book;
+  book: {
+    id: string;
+    title: string;
+    author: string;
+  };
   userFamilyId: string;
   userId: string;
   onSuccess: () => void;
@@ -98,7 +101,7 @@ export default function CreateLoanDialog({
       });
 
       if (response.ok) {
-        const data = await response.json();
+        await response.json();
         onSuccess();
         handleClose();
       } else {
@@ -132,10 +135,10 @@ export default function CreateLoanDialog({
       <DialogContent>
         <Box sx={{ mt: 2 }}>
           <Typography variant="body2" color="text.secondary" gutterBottom>
-            ספר: {book.title || book.title_hebrew}
+            ספר: {book.title}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            מחבר: {book.author || book.author_hebrew}
+            מחבר: {book.author}
           </Typography>
 
           <FormControl fullWidth sx={{ mb: 3 }}>
