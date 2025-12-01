@@ -1697,9 +1697,10 @@ app.post('/api/books/bulk-add', async (req, res) => {
         }
 
         // Prepare book data
-        // Validate ISBN: convert 0, '0', or empty string to null
+        // Validate ISBN: convert 0, '0', empty string, or partial ISBN to null
+        // Valid ISBNs are 10 or 13 digits
         let cleanIsbn = book.isbn
-        if (!cleanIsbn || cleanIsbn === 0 || cleanIsbn === '0' || cleanIsbn === '') {
+        if (!cleanIsbn || cleanIsbn === 0 || cleanIsbn === '0' || cleanIsbn === '' || String(cleanIsbn).length < 10) {
           cleanIsbn = null
         }
 

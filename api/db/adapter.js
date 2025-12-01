@@ -291,9 +291,10 @@ export const db = {
 
       // 2. If book doesn't exist in catalog, create it
       if (!catalogId) {
-        // Validate ISBN: convert 0, '0', or empty string to null
+        // Validate ISBN: convert 0, '0', empty string, or partial ISBN to null
+        // Valid ISBNs are 10 or 13 digits
         let cleanIsbn = book.isbn
-        if (!cleanIsbn || cleanIsbn === 0 || cleanIsbn === '0' || cleanIsbn === '') {
+        if (!cleanIsbn || cleanIsbn === 0 || cleanIsbn === '0' || cleanIsbn === '' || String(cleanIsbn).length < 10) {
           cleanIsbn = null
         }
 

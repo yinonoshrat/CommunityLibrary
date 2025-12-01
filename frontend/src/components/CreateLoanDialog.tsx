@@ -26,7 +26,7 @@ interface CreateLoanDialogProps {
   };
   userFamilyId: string;
   userId: string;
-  onSuccess: () => void;
+  onSuccess: (loan?: any) => void;
 }
 
 interface Family {
@@ -101,8 +101,8 @@ export default function CreateLoanDialog({
       });
 
       if (response.ok) {
-        await response.json();
-        onSuccess();
+        const data = await response.json();
+        onSuccess(data.loan);
         handleClose();
       } else {
         let errorMessage = 'שגיאה ביצירת ההשאלה';

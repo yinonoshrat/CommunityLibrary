@@ -184,6 +184,41 @@ export default function MyBooks() {
     setSelectedLoan(null)
   }
 
+  const handleLoanCreated = (catalogId: string, loan: any) => {
+    // Update the book in place instead of reloading all books
+    setBooks(prevBooks => prevBooks.map(book => {
+      if (book.catalogId === catalogId) {
+        // Update the viewer's owned copy to show it's now on loan
+        const updatedOwnedCopies = book.viewerContext.ownedCopies.map(copy => ({
+          ...copy,
+          loan: {
+            id: loan.id,
+            status: loan.status || 'active',
+            familyBookId: copy.familyBookId,
+            borrowerFamilyId: loan.borrower_family_id,
+            ownerFamilyId: loan.owner_family_id,
+            borrowerFamily: loan.borrower_family,
+            dueDate: loan.due_date,
+            requestDate: loan.created_at,
+            approvedDate: loan.approved_date
+          } as BookLoanSummary
+        }))
+        return {
+          ...book,
+          viewerContext: {
+            ...book.viewerContext,
+            ownedCopies: updatedOwnedCopies
+          },
+          stats: {
+            ...book.stats,
+            availableCopies: Math.max(0, book.stats.availableCopies - 1)
+          }
+        }
+      }
+      return book
+    }))
+  }
+
   const handleReturnSuccess = () => {
     setReturnDialogOpen(false)
     setSelectedLoan(null)
@@ -305,7 +340,11 @@ export default function MyBooks() {
         <Grid container spacing={3}>
           {books.map((book) => (
             <Grid key={book.catalogId} size={{ xs: 12, md: 6 }}>
-              <CatalogBookCard book={book} onMarkReturned={handleMarkReturned} />
+              <CatalogBookCard 
+                book={book} 
+                onMarkReturned={handleMarkReturned}
+                onLoanSuccess={handleLoanCreated}
+              />
             </Grid>
           ))}
         </Grid>

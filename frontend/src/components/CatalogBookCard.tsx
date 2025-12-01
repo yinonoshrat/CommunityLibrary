@@ -26,7 +26,7 @@ import type { CatalogBook, BookLoanSummary } from '../types'
 interface CatalogBookCardProps {
   book: CatalogBook
   onMarkReturned?: (args: { book: CatalogBook; loan: BookLoanSummary }) => void
-  onLoanSuccess?: () => void
+  onLoanSuccess?: (bookId: string, loan: any) => void
 }
 
 const FORMATTER = new Intl.DateTimeFormat('he-IL', { dateStyle: 'medium' })
@@ -84,9 +84,12 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
     onMarkReturned({ book, loan: viewerOwnedCopy.loan })
   }
 
-  const handleLoanSuccess = () => {
+  const handleLoanSuccess = (loan?: any) => {
     setLoanDialogOpen(false)
-    if (onLoanSuccess) onLoanSuccess()
+    // Trigger parent to update book status with loan data
+    if (onLoanSuccess && loan && book.catalogId) {
+      onLoanSuccess(book.catalogId, loan)
+    }
   }
 
   return (
