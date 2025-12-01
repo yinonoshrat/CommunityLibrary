@@ -106,9 +106,14 @@ export default function MyBooks() {
         if (genreFilter !== 'all') params.set('genre', genreFilter)
         if (sortBy !== 'title') params.set('sortBy', sortBy)
 
-        const response = await apiCall<{ books: CatalogBook[] }>(`/api/books?${params.toString()}`)
+        const response = await apiCall<{ books: CatalogBook[]; meta?: { message?: string } }>(`/api/books?${params.toString()}`)
         if (!isCancelled) {
           setBooks(response.books || [])
+          // Show info message if no family is associated
+          if (response.meta?.message && (response.books || []).length === 0) {
+            setError('')
+            // You could also set a separate info state here if you want to display it differently
+          }
         }
       } catch (err) {
         if (!isCancelled) {
@@ -195,9 +200,14 @@ export default function MyBooks() {
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box mb={3} display="flex" flexDirection="column" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
         <Box>
-          <Typography variant="h4" component="h1" gutterBottom>
-            {view === 'all' ? 'קטלוג הקהילה' : 'הספרים שלי'}
-          </Typography>
+          <Box display="flex" flexDirection="row-reverse" justifyContent="center" alignItems="center" gap={2}>
+            <Typography variant="h4" component="h1">
+              {view === 'all' ? 'קטלוג הקהילה' : 'הספרים שלי'}
+            </Typography>
+               <Typography variant="h6" color="text.secondary" sx={{ fontWeight: 'normal' }}>
+              ({books.length})
+            </Typography>
+          </Box>
           <Typography variant="body1" color="text.secondary">
             {subtitle}
           </Typography>

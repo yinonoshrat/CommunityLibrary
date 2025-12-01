@@ -281,18 +281,18 @@ export default function AddBook() {
 
     try {
       const bookData = {
-        title: formData.title.trim(),
-        author: formData.author.trim(),
-        series: formData.series.trim() || null,
+        title: formData.title?.trim() || '',
+        author: formData.author?.trim() || '',
+        series: formData.series?.trim() || null,
         series_number: formData.series_number ? parseInt(formData.series_number) : null,
-        isbn: formData.isbn.trim() || null,
+        isbn: formData.isbn?.trim() || null,
         publish_year: formData.publish_year ? parseInt(formData.publish_year) : null,
-        publisher: formData.publisher.trim() || null,
+        publisher: formData.publisher?.trim() || null,
         genre: formData.genre,
         age_range: formData.age_range || null,
         pages: formData.pages ? parseInt(formData.pages) : null,
-        description: formData.description.trim() || null,
-        cover_image_url: formData.cover_image_url.trim() || null,
+        description: formData.description?.trim() || null,
+        cover_image_url: formData.cover_image_url?.trim() || null,
         family_id: familyId,
         status: 'available',
       };

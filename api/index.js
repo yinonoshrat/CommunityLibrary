@@ -846,7 +846,16 @@ app.get('/api/books', async (req, res) => {
     }
 
     if ((view === 'my' || view === 'borrowed') && !viewerFamilyId) {
-      return res.status(400).json({ error: 'Family context required for this view' });
+      // If user doesn't have a family, return empty results instead of error
+      // This allows the UI to display properly for new users
+      return res.json({ 
+        books: [], 
+        meta: { 
+          total: 0, 
+          view,
+          message: 'לא נמצאה משפחה משויכת. אנא הצטרף או צור משפחה כדי לראות ספרים.'
+        } 
+      });
     }
 
     const filters = {
@@ -1679,12 +1688,12 @@ app.post('/api/books/bulk-add', async (req, res) => {
     const skippedBooks = [];
     const errors = [];
     
-    for (const book of books) {
-      try {
+    // Process books in parallel for better performance
+    const results = await Promise.allSettled(
+      books.map(async (book) => {
         // Basic validation
         if (!book.title || typeof book.title !== 'string') {
-          errors.push({ book, error: 'Missing or invalid title' });
-          continue;
+          throw new Error('Missing or invalid title');
         }
 
         // Prepare book data
@@ -1713,7 +1722,19 @@ app.post('/api/books/bulk-add', async (req, res) => {
 
         // Insert book using adapter (handles deduplication in catalog)
         const data = await db.books.create(bookData);
+        
+        return { book, data };
+      })
+    );
 
+    // Process results
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const originalBook = books[i];
+
+      if (result.status === 'fulfilled') {
+        const { data } = result.value;
+        
         // Check if book was already owned
         if (data._alreadyOwned) {
           skippedBooks.push({
@@ -1724,10 +1745,12 @@ app.post('/api/books/bulk-add', async (req, res) => {
         } else {
           addedBooks.push(data);
         }
-        
-      } catch (error) {
-        console.error('Book processing error:', error);
-        errors.push({ book, error: error.message });
+      } else {
+        console.error('Book processing error:', result.reason);
+        errors.push({ 
+          book: originalBook, 
+          error: result.reason?.message || 'Unknown error' 
+        });
       }
     }
 
