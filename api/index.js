@@ -1612,6 +1612,12 @@ app.post('/api/books/bulk-add', async (req, res) => {
         }
 
         // Prepare book data
+        // Validate ISBN: convert 0, '0', or empty string to null
+        let cleanIsbn = book.isbn
+        if (!cleanIsbn || cleanIsbn === 0 || cleanIsbn === '0' || cleanIsbn === '') {
+          cleanIsbn = null
+        }
+
         const bookData = {
           title: book.title.trim(),
           author: book.author ? book.author.trim() : 'לא ידוע',
@@ -1624,7 +1630,7 @@ app.post('/api/books/bulk-add', async (req, res) => {
           pages: book.pages || null,
           description: book.description || null,
           cover_image_url: book.cover_image_url || null,
-          isbn: book.isbn || null,
+          isbn: cleanIsbn,
           series: book.series || null,
           series_number: book.series_number || null
         };

@@ -291,12 +291,18 @@ export const db = {
 
       // 2. If book doesn't exist in catalog, create it
       if (!catalogId) {
+        // Validate ISBN: convert 0, '0', or empty string to null
+        let cleanIsbn = book.isbn
+        if (!cleanIsbn || cleanIsbn === 0 || cleanIsbn === '0' || cleanIsbn === '') {
+          cleanIsbn = null
+        }
+
         const catalogBook = {
           title: book.title,
           title_hebrew: book.title_hebrew,
           author: book.author,
           author_hebrew: book.author_hebrew,
-          isbn: book.isbn,
+          isbn: cleanIsbn,
           publisher: book.publisher,
           year_published: book.publish_year,
           genre: book.genre,

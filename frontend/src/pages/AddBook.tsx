@@ -23,6 +23,8 @@ import {
   Stack,
   IconButton,
   Checkbox,
+  Dialog,
+  DialogContent,
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -33,6 +35,9 @@ import {
   Delete as DeleteIcon,
   CheckCircle as CheckIcon,
   Edit as EditIcon,
+  ZoomIn as ZoomInIcon,
+  Close as CloseIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -121,6 +126,9 @@ export default function AddBook() {
   const [detectedBooks, setDetectedBooks] = useState<DetectedBook[]>([]);
   const [adding, setAdding] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [zoomDialogOpen, setZoomDialogOpen] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [refreshingBooks, setRefreshingBooks] = useState<Set<string>>(new Set());
   
   // Book search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -344,17 +352,29 @@ export default function AddBook() {
   };
 
   const handleRemoveImage = () => {
+    // Cancel any in-flight detection request
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+    }
+    
     setSelectedImage(null);
     setImagePreview('');
     setDetectedBooks([]);
     setError(null);
     setSuccess(false);
+    setDetecting(false);
+    setProgress(0);
   };
 
   const handleDetectBooks = async () => {
     if (!selectedImage) return;
 
     try {
+      // Create new abort controller for this request
+      const controller = new AbortController();
+      setAbortController(controller);
+      
       setDetecting(true);
       setError(null);
       setProgress(20);
@@ -367,6 +387,7 @@ export default function AddBook() {
       const data = await apiCall('/api/books/detect-from-image', {
         method: 'POST',
         body: formData,
+        signal: controller.signal,
       });
 
       setProgress(100);
@@ -394,11 +415,17 @@ export default function AddBook() {
         setError('לא זוהו ספרים בתמונה. נסה תמונה אחרת או הוסף ספרים ידנית.');
       }
     } catch (err: any) {
+      // Ignore abort errors
+      if (err.name === 'AbortError') {
+        console.log('Detection cancelled by user');
+        return;
+      }
       console.error('Detection error:', err);
       setError(err.message || 'שגיאה בזיהוי ספרים מהתמונה');
     } finally {
       setDetecting(false);
       setProgress(0);
+      setAbortController(null);
     }
   };
 
@@ -458,6 +485,64 @@ export default function AddBook() {
     setDetectedBooks(prevBooks => prevBooks.filter(book => book.tempId !== tempId));
   };
 
+  const handleRefreshBook = async (tempId: string) => {
+    const book = detectedBooks.find(b => b.tempId === tempId);
+    if (!book || !book.title) return;
+
+    setRefreshingBooks(prev => new Set(prev).add(tempId));
+
+    try {
+      // Search for updated book details
+      const results = await searchBooks(`${book.title} ${book.author || ''}`, {
+        provider: 'auto',
+        maxResults: 1,
+        userId: user?.id,
+      });
+
+      if (results && results.length > 0) {
+        const newData = results[0];
+        
+        // Merge new data with existing data, keeping user edits for empty fields
+        setDetectedBooks(prev => prev.map(b => {
+          if (b.tempId !== tempId) return b;
+          
+          return {
+            ...b,
+            // Only update fields that have new data
+            author: newData.author || b.author,
+            publisher: newData.publisher || b.publisher,
+            publish_year: newData.publish_year || b.publish_year,
+            pages: newData.pages || b.pages,
+            description: newData.description || b.description,
+            cover_image_url: newData.cover_image_url || b.cover_image_url,
+            isbn: newData.isbn || b.isbn,
+            genre: newData.genre || b.genre,
+            age_range: newData.age_range || b.age_range,
+            series: newData.series || b.series,
+            series_number: newData.series_number ?? b.series_number,
+            // Update confidence if we got good results
+            confidence: 'high' as const,
+            confidenceScore: newData.confidenceScore || 90,
+          };
+        }));
+        
+        setSuccessMessage(`נתונים עודכנו עבור "${book.title}"`);
+        setSuccess(true);
+      } else {
+        setError(`לא נמצאו תוצאות עבור "${book.title}"`);
+      }
+    } catch (err: any) {
+      console.error('Refresh book error:', err);
+      setError(err.message || 'שגיאה בעדכון נתוני הספר');
+    } finally {
+      setRefreshingBooks(prev => {
+        const next = new Set(prev);
+        next.delete(tempId);
+        return next;
+      });
+    }
+  };
+
   const handleSelectAll = () => {
     setDetectedBooks(prevBooks => prevBooks.map(book => ({ ...book, selected: true })));
   };
@@ -511,13 +596,25 @@ export default function AddBook() {
         );
       }
 
-      if (data.added > 0) {
+      // Only navigate if completely successful with no errors
+      const hasErrors = data.errors && data.errors.length > 0;
+      const hasSuccess = data.added > 0;
+
+      if (hasSuccess && !hasErrors) {
+        // Complete success - navigate away
         setSuccessMessage(`נוספו בהצלחה ${data.added} ספרים לקטלוג!`);
         setSuccess(true);
+        setDetectedBooks([]);
+        setSelectedImage(null);
         setTimeout(() => {
           navigate('/books');
         }, 2000);
+      } else if (hasSuccess && hasErrors) {
+        // Partial success - show message but stay on page
+        setSuccessMessage(`נוספו ${data.added} ספרים, אך היו ${data.errors.length} שגיאות. תקן והוסף שוב.`);
+        setSuccess(true);
       } else {
+        // No success - show error
         const firstError = data.errors?.[0]?.error;
         setError(firstError ? firstError : 'לא נוספו ספרים. בדוק את השגיאות.');
       }
@@ -638,7 +735,7 @@ export default function AddBook() {
           )}
 
           {/* Image Preview and Detection */}
-          {selectedImage && !detectedBooks.length && (
+          {selectedImage && (
             <Paper sx={{ p: 3, mb: 3 }}>
               <Box sx={{ position: 'relative', mb: 2 }}>
                 <img
@@ -652,10 +749,26 @@ export default function AddBook() {
                   }}
                 />
                 <IconButton
-                  sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'background.paper' }}
+                  sx={{ 
+                    position: 'absolute', 
+                    top: 8, 
+                    right: 8, 
+                    bgcolor: 'error.light',
+                    color: 'white',
+                    '&:hover': {
+                      bgcolor: 'error.main',
+                    }
+                  }}
                   onClick={handleRemoveImage}
+                  title="בטל הוספה"
                 >
-                  <DeleteIcon />
+                  <CloseIcon />
+                </IconButton>
+                <IconButton
+                  sx={{ position: 'absolute', top: 8, left: 8, bgcolor: 'background.paper' }}
+                  onClick={() => setZoomDialogOpen(true)}
+                >
+                  <ZoomInIcon />
                 </IconButton>
               </Box>
 
@@ -668,16 +781,18 @@ export default function AddBook() {
                 </Box>
               )}
 
-              <Button
-                variant="contained"
-                fullWidth
-                onClick={handleDetectBooks}
-                disabled={detecting}
-                startIcon={detecting ? <CircularProgress size={20} /> : <CheckIcon />}
-                sx={{ py: 1.5 }}
-              >
-                {detecting ? 'מזהה...' : 'זהה ספרים'}
-              </Button>
+              {!detectedBooks.length && (
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={handleDetectBooks}
+                  disabled={detecting}
+                  startIcon={detecting ? <CircularProgress size={20} /> : <CheckIcon />}
+                  sx={{ py: 1.5 }}
+                >
+                  {detecting ? 'מזהה...' : 'זהה ספרים'}
+                </Button>
+              )}
             </Paper>
           )}
 
@@ -888,13 +1003,28 @@ export default function AddBook() {
                           {book.expanded ? 'הסתר פרטים' : 'ערוך פרטים נוספים'}
                         </Button>
                       </Box>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleRemoveBook(book.tempId!)}
-                        color="error"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleRefreshBook(book.tempId!)}
+                          color="primary"
+                          disabled={refreshingBooks.has(book.tempId!)}
+                          title="עדכן נתונים מחיפוש מקוון"
+                        >
+                          {refreshingBooks.has(book.tempId!) ? (
+                            <CircularProgress size={20} />
+                          ) : (
+                            <RefreshIcon />
+                          )}
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleRemoveBook(book.tempId!)}
+                          color="error"
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
                     </Box>
                   </Paper>
                 ))}
@@ -1283,6 +1413,95 @@ export default function AddBook() {
       </Paper>
         </>
       )}
+
+      {/* Zoom Dialog */}
+      <Dialog
+        open={zoomDialogOpen}
+        onClose={() => setZoomDialogOpen(false)}
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            maxWidth: '95vw',
+            maxHeight: '95vh',
+            m: 0,
+          }
+        }}
+      >
+        <DialogContent sx={{ 
+          p: 0, 
+          position: 'relative', 
+          overflow: 'auto',
+          cursor: 'move',
+          '&::-webkit-scrollbar': {
+            width: '12px',
+            height: '12px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: '#f1f1f1',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#888',
+            borderRadius: '6px',
+          },
+          '&::-webkit-scrollbar-thumb:hover': {
+            background: '#555',
+          },
+        }}>
+          <IconButton
+            sx={{
+              position: 'sticky',
+              top: 8,
+              right: 8,
+              float: 'right',
+              bgcolor: 'background.paper',
+              zIndex: 1,
+              boxShadow: 2,
+            }}
+            onClick={() => setZoomDialogOpen(false)}
+          >
+            <CloseIcon />
+          </IconButton>
+          <img
+            src={imagePreview}
+            alt="Zoomed"
+            draggable={false}
+            style={{
+              width: '200%',
+              height: 'auto',
+              display: 'block',
+              cursor: 'grab',
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const img = e.currentTarget;
+              const container = img.parentElement;
+              if (!container) return;
+              
+              img.style.cursor = 'grabbing';
+              const startX = e.clientX;
+              const startY = e.clientY;
+              const scrollLeft = container.scrollLeft;
+              const scrollTop = container.scrollTop;
+              
+              const handleMouseMove = (moveEvent: MouseEvent) => {
+                const dx = startX - moveEvent.clientX;
+                const dy = startY - moveEvent.clientY;
+                container.scrollLeft = scrollLeft + dx;
+                container.scrollTop = scrollTop + dy;
+              };
+              
+              const handleMouseUp = () => {
+                img.style.cursor = 'grab';
+                window.removeEventListener('mousemove', handleMouseMove);
+                window.removeEventListener('mouseup', handleMouseUp);
+              };
+              
+              window.addEventListener('mousemove', handleMouseMove);
+              window.addEventListener('mouseup', handleMouseUp);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </Container>
   );
 }
