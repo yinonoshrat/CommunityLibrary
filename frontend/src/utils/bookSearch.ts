@@ -4,6 +4,8 @@
  * Searches for books using the backend API which supports multiple providers
  */
 
+import { apiCall } from './apiCall';
+
 export interface BookSearchResult {
   title: string;
   author: string;
@@ -64,13 +66,9 @@ export async function searchBooks(
       params.append('userId', userId);
     }
 
-    const response = await fetch(`/api/search-books?${params.toString()}`);
-    
-    if (!response.ok) {
-      throw new Error(`Search failed: ${response.status}`);
-    }
-    
-    const data = await response.json();
+    const data = await apiCall<{ success: boolean; results: BookSearchResult[] }>(
+      `/api/search-books?${params.toString()}`
+    );
     
     if (!data.success || !data.results) {
       return [];

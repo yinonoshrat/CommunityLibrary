@@ -16,7 +16,8 @@ import {
   FormLabel,
   Autocomplete,
 } from '@mui/material'
-import { apiCall, supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import { apiCall } from '../utils/apiCall'
 
 interface Family {
   id: string

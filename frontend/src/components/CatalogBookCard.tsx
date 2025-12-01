@@ -19,6 +19,7 @@ import {
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { apiCall } from '../utils/apiCall'
 import LikeButton from './LikeButton'
 import CreateLoanDialog from './CreateLoanDialog'
 import type { CatalogBook, BookLoanSummary } from '../types'
@@ -60,8 +61,7 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
       if (!user?.id) return;
       
       try {
-        const response = await fetch(`/api/users/${user.id}`);
-        const data = await response.json();
+        const data = await apiCall<{ user: any }>(`/api/users/${user.id}`);
         if (data.user?.family_id) {
           setUserFamilyId(data.user.family_id);
         }

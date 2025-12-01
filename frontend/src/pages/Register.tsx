@@ -26,7 +26,8 @@ import {
 } from '@mui/material'
 import { Google as GoogleIcon } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
-import { apiCall, supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import { apiCall } from '../utils/apiCall'
 
 interface Family {
   id: string

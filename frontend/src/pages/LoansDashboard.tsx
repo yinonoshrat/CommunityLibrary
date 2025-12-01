@@ -8,6 +8,7 @@ import {
   Grid,
 } from '@mui/material'
 import { useAuth } from '../contexts/AuthContext'
+import { apiCall } from '../utils/apiCall'
 import CatalogBookCard from '../components/CatalogBookCard'
 import type { CatalogBook } from '../types'
 
@@ -126,8 +127,7 @@ export default function LoansDashboard() {
       }
 
       try {
-        const userResponse = await fetch(`/api/users/${user.id}`);
-        const userData = await userResponse.json();
+        const userData = await apiCall<{ user: any }>(`/api/users/${user.id}`);
         
         if (userData.user?.family_id) {
           setFamilyId(userData.user.family_id);
@@ -151,17 +151,10 @@ export default function LoansDashboard() {
     setError('')
 
     try {
-      const [ownerResponse, borrowerResponse] = await Promise.all([
-        fetch(`/api/loans?ownerFamilyId=${familyId}&status=returned`),
-        fetch(`/api/loans?borrowerFamilyId=${familyId}&status=returned`),
+      const [ownerData, borrowerData] = await Promise.all([
+        apiCall<{ loans: LoanRecord[] }>(`/api/loans?ownerFamilyId=${familyId}&status=returned`),
+        apiCall<{ loans: LoanRecord[] }>(`/api/loans?borrowerFamilyId=${familyId}&status=returned`),
       ])
-
-      const ownerData = await ownerResponse.json()
-      const borrowerData = await borrowerResponse.json()
-
-      if (!ownerResponse.ok || !borrowerResponse.ok) {
-        throw new Error('שגיאה בטעינת היסטוריית ההשאלות')
-      }
 
       const combined = [
         ...(ownerData.loans || []),

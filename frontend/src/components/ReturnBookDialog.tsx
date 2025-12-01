@@ -11,6 +11,7 @@ import {
   Box,
   Typography
 } from '@mui/material';
+import { apiCall } from '../utils/apiCall';
 
 interface Loan {
   id: string;
@@ -64,11 +65,8 @@ export default function ReturnBookDialog({
     setError('');
 
     try {
-      const response = await fetch(`/api/loans/${loan.id}`, {
+      await apiCall(`/api/loans/${loan.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           status: 'returned',
           return_date: returnDate,
@@ -76,17 +74,11 @@ export default function ReturnBookDialog({
         }),
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        onSuccess();
-        handleClose();
-      } else {
-        setError(data.error || 'שגיאה בסימון ההחזרה');
-      }
-    } catch (err) {
+      onSuccess();
+      handleClose();
+    } catch (err: any) {
       console.error('Error returning book:', err);
-      setError('שגיאה בסימון ההחזרה');
+      setError(err.message || 'שגיאה בסימון ההחזרה');
     } finally {
       setLoading(false);
     }

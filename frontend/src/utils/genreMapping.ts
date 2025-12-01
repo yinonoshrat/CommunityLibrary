@@ -5,6 +5,8 @@
  * Learns from user selections to improve future mappings.
  */
 
+import { apiCall } from './apiCall';
+
 interface GenreMapping {
   id: string;
   original_category: string;
@@ -90,20 +92,13 @@ export async function saveGenreMapping(
   mappedGenre: string
 ): Promise<void> {
   try {
-    const response = await fetch('/api/genre-mappings', {
+    await apiCall('/api/genre-mappings', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
       body: JSON.stringify({
         original_category: originalCategory,
         mapped_genre: mappedGenre,
       }),
     });
-
-    if (!response.ok) {
-      throw new Error('Failed to save genre mapping');
-    }
   } catch (error) {
     console.error('Error saving genre mapping:', error);
     // Don't throw - this is a learning feature, shouldn't block the main flow
@@ -115,13 +110,7 @@ export async function saveGenreMapping(
  */
 export async function fetchGenreMappings(): Promise<GenreMapping[]> {
   try {
-    const response = await fetch('/api/genre-mappings');
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch genre mappings');
-    }
-
-    const data = await response.json();
+    const data = await apiCall<{ mappings: GenreMapping[] }>('/api/genre-mappings');
     return data.mappings || [];
   } catch (error) {
     console.error('Error fetching genre mappings:', error);

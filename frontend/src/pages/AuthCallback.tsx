@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Container, Box, CircularProgress, Alert, Typography } from '@mui/material'
-import { supabase, apiCall } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import { apiCall } from '../utils/apiCall'
 
 export default function AuthCallback() {
   const navigate = useNavigate()

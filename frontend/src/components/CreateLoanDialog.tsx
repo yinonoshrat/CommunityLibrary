@@ -15,6 +15,7 @@ import {
   Box,
   Typography
 } from '@mui/material';
+import { apiCall } from '../utils/apiCall';
 
 interface CreateLoanDialogProps {
   open: boolean;
@@ -58,18 +59,12 @@ export default function CreateLoanDialog({
 
   const fetchFamilies = async () => {
     try {
-      const response = await fetch('/api/families');
-      const data = await response.json();
-      
-      if (response.ok) {
-        // Filter out the current user's family
-        const otherFamilies = data.families.filter(
-          (f: Family) => f.id !== userFamilyId
-        );
-        setFamilies(otherFamilies);
-      } else {
-        setError('שגיאה בטעינת רשימת המשפחות');
-      }
+      const data = await apiCall<{ families: Family[] }>('/api/families');
+      // Filter out the current user's family
+      const otherFamilies = data.families.filter(
+        (f: Family) => f.id !== userFamilyId
+      );
+      setFamilies(otherFamilies);
     } catch (err) {
       console.error('Error fetching families:', err);
       setError('שגיאה בטעינת רשימת המשפחות');
@@ -86,11 +81,8 @@ export default function CreateLoanDialog({
     setError('');
 
     try {
-      const response = await fetch('/api/loans', {
+      const data = await apiCall<{ loan: any }>('/api/loans', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           family_book_id: book.id,
           borrower_family_id: selectedFamilyId,
@@ -100,23 +92,11 @@ export default function CreateLoanDialog({
         }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        onSuccess(data.loan);
-        handleClose();
-      } else {
-        let errorMessage = 'שגיאה ביצירת ההשאלה';
-        try {
-          const data = await response.json();
-          errorMessage = data.error || errorMessage;
-        } catch {
-          // Failed to parse error response as JSON
-        }
-        setError(errorMessage);
-      }
-    } catch (err) {
+      onSuccess(data.loan);
+      handleClose();
+    } catch (err: any) {
       console.error('Error creating loan:', err);
-      setError('שגיאה ביצירת ההשאלה');
+      setError(err.message || 'שגיאה ביצירת ההשאלה');
     } finally {
       setLoading(false);
     }
