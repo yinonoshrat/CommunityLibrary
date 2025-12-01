@@ -9,9 +9,6 @@ import {
   Link,
   Alert,
   CircularProgress,
-  Stepper,
-  Step,
-  StepLabel,
   RadioGroup,
   Radio,
   FormControlLabel,
@@ -27,8 +24,9 @@ import {
   ListItemText,
   Divider,
 } from '@mui/material'
+import { Google as GoogleIcon } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
-import { apiCall } from '../lib/supabase'
+import { apiCall, supabase } from '../lib/supabase'
 
 interface Family {
   id: string
@@ -132,15 +130,13 @@ function DuplicateFamilyDialog({
   )
 }
 
-const steps = ['פרטים אישיים', 'פרטי משפחה']
-
 export default function Register() {
   const navigate = useNavigate()
-  const [activeStep, setActiveStep] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [families, setFamilies] = useState<Family[]>([])
   const [loadingFamilies, setLoadingFamilies] = useState(true)
+  const [oauthLoading, setOauthLoading] = useState(false)
   
   // Duplicate family dialog state
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
@@ -159,8 +155,6 @@ export default function Register() {
   const [familyChoice, setFamilyChoice] = useState<'new' | 'existing'>('new')
   const [selectedFamily, setSelectedFamily] = useState<Family | null>(null)
   const [familyName, setFamilyName] = useState('')
-  const [familyPhone, setFamilyPhone] = useState('')
-  const [familyWhatsapp, setFamilyWhatsapp] = useState('')
 
   // Load families on mount
   useEffect(() => {
@@ -188,46 +182,60 @@ export default function Register() {
     return family.name
   }
 
-  const handleNext = () => {
-    if (activeStep === 0) {
-      if (!email || !password || !fullName) {
-        setError('נא למלא את כל השדות החובה')
-        return
-      }
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(email)) {
-        setError('אימייל לא תקין')
-        return
-      }
-      if (password !== confirmPassword) {
-        setError('הסיסמאות אינן תואמות')
-        return
-      }
-      if (password.length < 6) {
-        setError('הסיסמה חייבת להכיל לפחות 6 תווים')
-        return
-      }
-      setError('')
-      setActiveStep(1)
-    } else {
-      // Validate family choice
-      if (familyChoice === 'existing' && !selectedFamily) {
-        setError('נא לבחור משפחה קיימת')
-        return
-      }
-      if (familyChoice === 'new' && !familyName) {
-        setError('נא למלא שם משפחה')
-        return
-      }
+  const handleGoogleSignIn = async () => {
+    setOauthLoading(true)
+    setError('')
+    
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
       
-      // Check for duplicate family names before submitting
-      if (familyChoice === 'new') {
-        checkForDuplicateFamilyName()
-      } else {
-        handleSubmit()
-      }
+      if (error) throw error
+    } catch (err: any) {
+      setError(err.message || 'שגיאה בהתחברות עם Google')
+      setOauthLoading(false)
     }
+  }
+
+  const validateForm = () => {
+    if (!email || !password || !fullName) {
+      setError('נא למלא את כל השדות החובה')
+      return false
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      setError('אימייל לא תקין')
+      return false
+    }
+    
+    if (password !== confirmPassword) {
+      setError('הסיסמאות אינן תואמות')
+      return false
+    }
+    
+    if (password.length < 6) {
+      setError('הסיסמה חייבת להכיל לפחות 6 תווים')
+      return false
+    }
+    
+    // Validate family choice
+    if (familyChoice === 'existing' && !selectedFamily) {
+      setError('נא לבחור משפחה קיימת')
+      return false
+    }
+    
+    if (familyChoice === 'new' && !familyName) {
+      setError('נא למלא שם משפחה')
+      return false
+    }
+    
+    return true
   }
 
   const checkForDuplicateFamilyName = async () => {
@@ -268,18 +276,13 @@ export default function Register() {
     setDuplicateFamilies([])
     setSelectedFamily(family)
     setFamilyChoice('existing')
-    // Submit with the selected existing family - use direct submission
+    // Submit with the selected existing family
     handleSubmitWithFamily(family)
   }
 
   const handleCancelDuplicateDialog = () => {
     setDuplicateDialogOpen(false)
     setDuplicateFamilies([])
-  }
-
-  const handleBack = () => {
-    setActiveStep(0)
-    setError('')
   }
 
   const handleSubmitWithFamily = async (family: Family) => {
@@ -326,8 +329,9 @@ export default function Register() {
         payload.existingFamilyId = selectedFamily.id
       } else if (familyChoice === 'new' && familyName) {
         payload.familyName = familyName
-        payload.familyPhone = familyPhone || phone
-        payload.familyWhatsapp = familyWhatsapp || whatsapp || phone
+        // Use user's phone/whatsapp for the family
+        payload.familyPhone = phone
+        payload.familyWhatsapp = whatsapp || phone
       }
 
       await apiCall('/auth/register', {
@@ -343,6 +347,21 @@ export default function Register() {
     }
   }
 
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!validateForm()) {
+      return
+    }
+    
+    // Check for duplicate family names if creating new family
+    if (familyChoice === 'new') {
+      checkForDuplicateFamilyName()
+    } else {
+      handleSubmit()
+    }
+  }
+
   return (
     <Container maxWidth="md">
       <Box sx={{ mt: 8, mb: 4 }}>
@@ -351,187 +370,187 @@ export default function Register() {
             הרשמה לספרייה הקהילתית
           </Typography>
 
-          <Stepper activeStep={activeStep} sx={{ my: 4 }}>
-            {steps.map((label) => (
-              <Step key={label}>
-                <StepLabel>{label}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
-
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
           )}
 
-          {activeStep === 0 && (
-            <Box>
-              <TextField
-                fullWidth
-                label="שם מלא"
-                name="name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-                margin="normal"
-                inputProps={{ 'data-testid': 'name-input' }}
-              />
-
-              <TextField
-                fullWidth
-                label="אימייל"
-                name="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                margin="normal"
-                autoComplete="email"
-                inputProps={{ 'data-testid': 'email-input' }}
-              />
-
-              <TextField
-                fullWidth
-                label="סיסמה"
-                name="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                margin="normal"
-                helperText="לפחות 6 תווים"
-                inputProps={{ 'data-testid': 'password-input' }}
-              />
-
-              <TextField
-                fullWidth
-                label="אימות סיסמה"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                margin="normal"
-              />
-
-              <TextField
-                fullWidth
-                label="טלפון"
-                name="phone"
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                margin="normal"
-                helperText="לתקשורת עם משפחות אחרות"
-                inputProps={{ 'data-testid': 'phone-input' }}
-              />
-
-              <TextField
-                fullWidth
-                label="ווטסאפ"
-                type="tel"
-                value={whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-                margin="normal"
-                helperText="אם שונה ממספר הטלפון"
-              />
-            </Box>
-          )}
-
-          {activeStep === 1 && (
-            <Box>
-              <Typography variant="body1" sx={{ mb: 3 }}>
-                בחר משפחה קיימת או צור משפחה חדשה
-              </Typography>
-
-              <FormControl component="fieldset" sx={{ mb: 3 }}>
-                <FormLabel component="legend">אפשרות משפחה</FormLabel>
-                <RadioGroup
-                  value={familyChoice}
-                  onChange={(e) => setFamilyChoice(e.target.value as 'new' | 'existing')}
-                >
-                  <FormControlLabel value="new" control={<Radio />} label="צור משפחה חדשה" />
-                  <FormControlLabel value="existing" control={<Radio />} label="הצטרף למשפחה קיימת" />
-                </RadioGroup>
-              </FormControl>
-
-              {familyChoice === 'existing' && (
-                <Autocomplete
-                  options={families}
-                  getOptionLabel={(option) => getFamilyDisplayName(option)}
-                  value={selectedFamily}
-                  onChange={(_, newValue) => setSelectedFamily(newValue)}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="בחר משפחה"
-                      required
-                      helperText="חפש לפי שם משפחה"
-                    />
-                  )}
-                  loading={loadingFamilies}
-                  loadingText="טוען משפחות..."
-                  noOptionsText="לא נמצאו משפחות"
-                  sx={{ mb: 2 }}
-                />
-              )}
-
-              {familyChoice === 'new' && (
-                <>
-                  <TextField
-                    fullWidth
-                    label="שם משפחה"
-                    name="familyName"
-                    value={familyName}
-                    onChange={(e) => setFamilyName(e.target.value)}
-                    required
-                    margin="normal"
-                    helperText="לדוגמה: משפחת כהן"
-                    inputProps={{ 'data-testid': 'familyName-input' }}
-                  />
-
-                  <TextField
-                    fullWidth
-                    label="טלפון ליצירת קשר"
-                    type="tel"
-                    value={familyPhone}
-                    onChange={(e) => setFamilyPhone(e.target.value)}
-                    margin="normal"
-                  />
-
-                  <TextField
-                    fullWidth
-                    label="ווטסאפ למשפחה"
-                    type="tel"
-                    value={familyWhatsapp}
-                    onChange={(e) => setFamilyWhatsapp(e.target.value)}
-                    margin="normal"
-                  />
-                </>
-              )}
-            </Box>
-          )}
-
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
-            {activeStep > 0 && (
-              <Button onClick={handleBack} disabled={loading}>
-                חזור
-              </Button>
-            )}
+          {/* OAuth Buttons */}
+          <Box sx={{ mt: 3, mb: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Button
+              fullWidth
+              variant="outlined"
+              size="large"
+              startIcon={<GoogleIcon />}
+              onClick={handleGoogleSignIn}
+              disabled={oauthLoading || loading}
+              sx={{ 
+                borderColor: '#4285f4',
+                color: '#4285f4',
+                '&:hover': {
+                  borderColor: '#357ae8',
+                  bgcolor: 'rgba(66, 133, 244, 0.04)'
+                }
+              }}
+            >
+              {oauthLoading ? <CircularProgress size={24} /> : 'המשך עם Google'}
+            </Button>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', my: 2 }}>
+              <Divider sx={{ flexGrow: 1 }} />
+              <Typography variant="body2" sx={{ px: 2, color: 'text.secondary' }}>
+                או
+              </Typography>
+              <Divider sx={{ flexGrow: 1 }} />
+            </Box>
+          </Box>
+
+          <Box component="form" onSubmit={handleFormSubmit}>
+            {/* Personal Details */}
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              פרטים אישיים
+            </Typography>
+
+            <TextField
+              fullWidth
+              label="שם מלא"
+              name="name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              margin="normal"
+              inputProps={{ 'data-testid': 'name-input' }}
+            />
+
+            <TextField
+              fullWidth
+              label="אימייל"
+              name="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              margin="normal"
+              autoComplete="email"
+              inputProps={{ 'data-testid': 'email-input' }}
+            />
+
+            <TextField
+              fullWidth
+              label="סיסמה"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              margin="normal"
+              helperText="לפחות 6 תווים"
+              inputProps={{ 'data-testid': 'password-input' }}
+            />
+
+            <TextField
+              fullWidth
+              label="אימות סיסמה"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              margin="normal"
+            />
+
+            <TextField
+              fullWidth
+              label="טלפון"
+              name="phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              margin="normal"
+              helperText="לתקשורת עם משפחות אחרות"
+              inputProps={{ 'data-testid': 'phone-input' }}
+            />
+
+            <TextField
+              fullWidth
+              label="ווטסאפ"
+              type="tel"
+              value={whatsapp}
+              onChange={(e) => setWhatsapp(e.target.value)}
+              margin="normal"
+              helperText="אם שונה ממספר הטלפון"
+            />
+
+            {/* Family Details */}
+            <Typography variant="h6" sx={{ mt: 4, mb: 2 }}>
+              פרטי משפחה
+            </Typography>
+
+            <FormControl component="fieldset" sx={{ mb: 3 }}>
+              <FormLabel component="legend">בחר אפשרות משפחה</FormLabel>
+              <RadioGroup
+                value={familyChoice}
+                onChange={(e) => setFamilyChoice(e.target.value as 'new' | 'existing')}
+              >
+                <FormControlLabel value="new" control={<Radio />} label="צור משפחה חדשה" />
+                <FormControlLabel value="existing" control={<Radio />} label="הצטרף למשפחה קיימת" />
+              </RadioGroup>
+            </FormControl>
+
+            {familyChoice === 'existing' && (
+              <Autocomplete
+                options={families}
+                getOptionLabel={(option) => getFamilyDisplayName(option)}
+                value={selectedFamily}
+                onChange={(_, newValue) => setSelectedFamily(newValue)}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="בחר משפחה"
+                    required
+                    helperText="חפש לפי שם משפחה"
+                  />
+                )}
+                loading={loadingFamilies}
+                loadingText="טוען משפחות..."
+                noOptionsText="לא נמצאו משפחות"
+                sx={{ mb: 2 }}
+              />
+            )}
+
+            {familyChoice === 'new' && (
+              <>
+                <TextField
+                  fullWidth
+                  label="שם משפחה"
+                  name="familyName"
+                  value={familyName}
+                  onChange={(e) => setFamilyName(e.target.value)}
+                  required
+                  margin="normal"
+                  helperText="לדוגמה: משפחת כהן. יצירת המשפחה תשתמש בטלפון והווטסאפ שלך"
+                  inputProps={{ 'data-testid': 'familyName-input' }}
+                />
+
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  המשפחה תיווצר עם מספר הטלפון והווטסאפ שלך לצורך יצירת קשר
+                </Alert>
+              </>
+            )}
+
+            <Button
+              type="submit"
+              fullWidth
               variant="contained"
-              onClick={handleNext}
-              disabled={loading || checkingFamilyName}
-              sx={{ mr: 'auto' }}
+              size="large"
+              disabled={loading || checkingFamilyName || oauthLoading}
+              sx={{ mt: 3 }}
               data-testid="submit-button"
-              type={activeStep === 0 ? 'button' : 'submit'}
             >
               {loading || checkingFamilyName ? (
                 <CircularProgress size={24} />
-              ) : activeStep === steps.length - 1 ? (
-                'הירשם'
               ) : (
-                'המשך'
+                'הירשם'
               )}
             </Button>
           </Box>

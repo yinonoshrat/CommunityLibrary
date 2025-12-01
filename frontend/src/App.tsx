@@ -10,6 +10,9 @@ import Navbar from './components/Navbar'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import AuthCallback from './pages/AuthCallback'
+import CompleteProfile from './pages/CompleteProfile'
+import ResetPassword from './pages/ResetPassword'
 import Profile from './pages/Profile'
 import FamilyDashboard from './pages/FamilyDashboard'
 import FamilyMembers from './pages/FamilyMembers'
@@ -42,6 +45,9 @@ function AppRoutes() {
         <Route path="/" element={user ? <Home /> : <Navigate to="/login" />} />
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
         <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/complete-profile" element={<CompleteProfile />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/books" element={user ? <MyBooks /> : <Navigate to="/login" />} />
         <Route path="/books/add" element={user ? <AddBook /> : <Navigate to="/login" />} />
         <Route path="/books/:id" element={user ? <BookDetails /> : <Navigate to="/login" />} />

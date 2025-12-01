@@ -1,0 +1,66 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Container, Box, CircularProgress, Alert, Typography } from '@mui/material'
+import { supabase, apiCall } from '../lib/supabase'
+
+export default function AuthCallback() {
+  const navigate = useNavigate()
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const handleCallback = async () => {
+      try {
+        // Exchange code for session
+        const { data: { session }, error: authError } = await supabase.auth.getSession()
+        
+        if (authError) throw authError
+        
+        if (!session) {
+          throw new Error('No session found')
+        }
+
+        // Check if user exists in our database
+        const { data: { user } } = await supabase.auth.getUser()
+        
+        if (user) {
+          try {
+            // Try to get user profile
+            await apiCall(`/users/${user.id}`)
+            
+            // User exists, navigate to home
+            navigate('/')
+          } catch (err: any) {
+            // User doesn't exist in database, need to complete registration
+            console.log('User not found in database, redirecting to complete profile')
+            navigate('/complete-profile')
+          }
+        }
+      } catch (err: any) {
+        console.error('OAuth callback error:', err)
+        setError(err.message || 'שגיאה בהתחברות')
+      }
+    }
+
+    handleCallback()
+  }, [navigate])
+
+  return (
+    <Container maxWidth="sm">
+      <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+        {error ? (
+          <>
+            <Alert severity="error">{error}</Alert>
+            <Typography>
+              <a href="/login">חזרה להתחברות</a>
+            </Typography>
+          </>
+        ) : (
+          <>
+            <CircularProgress />
+            <Typography>מתחבר...</Typography>
+          </>
+        )}
+      </Box>
+    </Container>
+  )
+}

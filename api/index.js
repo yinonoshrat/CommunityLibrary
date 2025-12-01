@@ -421,6 +421,82 @@ app.post('/api/auth/logout', async (req, res) => {
   }
 });
 
+// Complete OAuth registration (for Google/Facebook sign-in)
+app.post('/api/auth/oauth-complete', async (req, res) => {
+  try {
+    const { id, email, fullName, provider, phone, whatsapp, familyName, familyPhone, familyWhatsapp, existingFamilyId } = req.body;
+
+    console.log('OAuth completion attempt:', { id, email, fullName, provider, phone, familyName, existingFamilyId });
+
+    // Validate required fields
+    if (!id || !email || !fullName || !phone) {
+      return res.status(400).json({ error: 'Missing required fields: id, email, fullName, phone' });
+    }
+
+    // Check if user already exists
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', id)
+      .single();
+
+    if (existingUser) {
+      console.log('User already exists:', id);
+      const user = await db.users.getById(id);
+      return res.json({ user, family_id: user.family_id });
+    }
+
+    // Determine family ID
+    let familyId = null;
+    
+    if (existingFamilyId) {
+      // Join existing family
+      familyId = existingFamilyId;
+      console.log('Joining existing family:', familyId);
+    } else if (familyName) {
+      // Create new family
+      console.log('Creating new family:', { familyName, familyPhone });
+      
+      const { data: newFamily, error: familyError } = await supabase
+        .from('families')
+        .insert({
+          name: familyName,
+          phone: familyPhone,
+          whatsapp: familyWhatsapp || familyPhone,
+          email
+        })
+        .select()
+        .single();
+      
+      if (familyError) {
+        console.error('Family creation error:', familyError);
+        return res.status(400).json({ error: 'Failed to create family: ' + familyError.message });
+      }
+      
+      console.log('Family created successfully:', newFamily.id);
+      familyId = newFamily.id;
+    }
+
+    // Create user profile with family information
+    const user = await db.users.create({
+      id,
+      email,
+      auth_email: email, // OAuth users use their actual email
+      full_name: fullName,
+      phone,
+      whatsapp: whatsapp || phone,
+      family_id: familyId,
+      is_family_admin: existingFamilyId ? false : (familyId ? true : false)
+    });
+
+    console.log('OAuth user created successfully:', user.id);
+    res.status(201).json({ user, family_id: familyId });
+  } catch (error) {
+    console.error('OAuth completion error:', error);
+    res.status(400).json({ error: error.message || 'OAuth completion failed' });
+  }
+});
+
 // Get current user
 app.get('/api/auth/me', async (req, res) => {
   try {
