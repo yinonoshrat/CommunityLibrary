@@ -56,10 +56,11 @@ describe('Recommendations API Endpoint', () => {
       .get(`/api/books?familyId=${testFamilyId}`)
     
     if (booksResponse.body.books && booksResponse.body.books.length >= 2) {
-      testBook1Id = booksResponse.body.books[0].id
-      testBook2Id = booksResponse.body.books[1].id
+      // Books are grouped by catalog, get family_book IDs from viewerContext
+      testBook1Id = booksResponse.body.books[0].viewerContext?.ownedCopies?.[0]?.familyBookId
+      testBook2Id = booksResponse.body.books[1].viewerContext?.ownedCopies?.[0]?.familyBookId
     } else if (booksResponse.body.books && booksResponse.body.books.length === 1) {
-      testBook1Id = booksResponse.body.books[0].id
+      testBook1Id = booksResponse.body.books[0].viewerContext?.ownedCopies?.[0]?.familyBookId
       
       const book2Response = await request(app)
         .post('/api/books')
@@ -106,7 +107,7 @@ describe('Recommendations API Endpoint', () => {
       .get(`/api/books?familyId=${otherFamilyId}`)
     
     if (otherBooksResponse.body.books && otherBooksResponse.body.books.length > 0) {
-      recommendationBookId = otherBooksResponse.body.books[0].id
+      recommendationBookId = otherBooksResponse.body.books[0].viewerContext?.ownedCopies?.[0]?.familyBookId
     } else {
       // Create a book in another family for recommendations
       const { data: otherUser } = await supabase

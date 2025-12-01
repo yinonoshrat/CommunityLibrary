@@ -55,8 +55,14 @@ describe('Loans API Endpoints', () => {
       .get(`/api/books?familyId=${testFamilyId}`)
     
     if (booksResponse.body.books && booksResponse.body.books.length > 0) {
-      testBookId = booksResponse.body.books[0].id
-    } else {
+      // Books are grouped by catalog, get family_book ID from viewerContext
+      const firstBook = booksResponse.body.books[0]
+      if (firstBook.viewerContext?.ownedCopies?.[0]?.familyBookId) {
+        testBookId = firstBook.viewerContext.ownedCopies[0].familyBookId
+      }
+    }
+    
+    if (!testBookId) {
       const bookResponse = await request(app)
         .post('/api/books')
         .set('x-user-id', testUserId)
@@ -75,6 +81,7 @@ describe('Loans API Endpoints', () => {
     if (testBookId && borrowerFamilyId) {
       const loanResponse = await request(app)
         .post('/api/loans')
+        .set('x-user-id', testUserId)
         .send({
           family_book_id: testBookId,
           borrower_family_id: borrowerFamilyId,
@@ -168,6 +175,7 @@ describe('Loans API Endpoints', () => {
 
       const response = await request(app)
         .post('/api/loans')
+        .set('x-user-id', testUserId)
         .send({
           family_book_id: testBookId,
           borrower_family_id: borrowerFamilyId,
@@ -186,6 +194,7 @@ describe('Loans API Endpoints', () => {
     it('should return JSON error for missing required fields', async () => {
       const response = await request(app)
         .post('/api/loans')
+        .set('x-user-id', testUserId)
         .send({
           status: 'active'
         })
@@ -200,6 +209,7 @@ describe('Loans API Endpoints', () => {
 
       const response = await request(app)
         .post('/api/loans')
+        .set('x-user-id', testUserId)
         .send({
           book_id: testBookId,
           borrower_family_id: borrowerFamilyId,
@@ -234,6 +244,7 @@ describe('Loans API Endpoints', () => {
       // Create loan
       const loanResponse = await request(app)
         .post('/api/loans')
+        .set('x-user-id', testUserId)
         .send({
           family_book_id: bookId,
           borrower_family_id: borrowerFamilyId,
@@ -266,6 +277,7 @@ describe('Loans API Endpoints', () => {
 
       const response = await request(app)
         .put(`/api/loans/${testLoanId}`)
+        .set('x-user-id', testUserId)
         .send({
           status: 'returned'
         })
@@ -309,6 +321,7 @@ describe('Loans API Endpoints', () => {
       // Return the loan
       await request(app)
         .put(`/api/loans/${loanId}`)
+        .set('x-user-id', testUserId)
         .send({ status: 'returned' })
         .expect(200)
 
@@ -330,6 +343,7 @@ describe('Loans API Endpoints', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
         .put(`/api/loans/${fakeId}`)
+        .set('x-user-id', testUserId)
         .send({ status: 'returned' })
         .expect('Content-Type', /json/)
         .expect(400)

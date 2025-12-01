@@ -386,6 +386,13 @@ export const db = {
     },
 
     update: async (id, updates) => {
+      // Validate ID first
+      if (!id || id === 'undefined' || typeof id !== 'string') {
+        const error = new Error('Invalid book ID');
+        error.code = 'INVALID_ID';
+        throw error;
+      }
+
       // Split updates into catalog fields vs family-specific fields
       const catalogFields = {
         title: updates.title,
@@ -426,7 +433,11 @@ export const db = {
         .eq('id', id)
         .single()
 
-      if (fbError) throw fbError
+      if (fbError || !familyBook) {
+        const error = new Error('Book not found');
+        error.code = 'NOT_FOUND';
+        throw error;
+      }
 
       // Update catalog if there are catalog fields
       if (Object.keys(catalogFields).length > 0) {
@@ -559,7 +570,15 @@ export const db = {
         .from('loans')
         .update(updates)
         .eq('id', id)
-        .select()
+        .select(`
+          *,
+          family_books!family_book_id(
+            id,
+            book_catalog(title, title_hebrew, author, cover_image_url)
+          ),
+          borrower_family:families!borrower_family_id(name, phone, whatsapp),
+          owner_family:families!owner_family_id(name, phone, whatsapp)
+        `)
         .single()
       if (error) throw error
       return data
@@ -668,6 +687,11 @@ export const db = {
   // Likes operations
   likes: {
     getByBookId: async (bookId) => {
+      // Validate bookId
+      if (!bookId || bookId === 'undefined') {
+        return [];
+      }
+
       // bookId here is the family_books ID, get the catalog ID
       const { data: familyBook, error: fbError } = await supabase
         .from('family_books')
@@ -676,21 +700,29 @@ export const db = {
         .single()
 
       if (fbError) {
-        // Assume it's already a catalog ID
+        // If not a valid family_book ID, try as catalog ID
         const { data, error } = await supabase
           .from('likes')
           .select('*, users(full_name)')
           .eq('book_catalog_id', bookId)
-        if (error) throw error
-        return data
+        
+        if (error) {
+          console.error('Error fetching likes:', error);
+          return [];
+        }
+        return data || [];
       }
 
       const { data, error } = await supabase
         .from('likes')
         .select('*, users(full_name)')
         .eq('book_catalog_id', familyBook.book_catalog_id)
-      if (error) throw error
-      return data
+      
+      if (error) {
+        console.error('Error fetching likes:', error);
+        return [];
+      }
+      return data || [];
     },
 
     toggle: async (bookId, userId) => {

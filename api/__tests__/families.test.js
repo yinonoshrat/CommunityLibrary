@@ -14,12 +14,14 @@ const requireTestData = (data, message) => {
 
 describe('Families API Endpoints', () => {
   let testFamilyId = null
+  let testUserId = null
   let authToken = null
 
   beforeAll(async () => {
     // Use shared test user and family
     const sharedData = getSharedTestData()
     testFamilyId = sharedData.familyId
+    testUserId = sharedData.userId
   })
 
   describe('GET /api/families', () => {
@@ -94,6 +96,7 @@ describe('Families API Endpoints', () => {
       const timestamp = Date.now()
       const response = await request(app)
         .post('/api/families')
+        .set('x-user-id', testUserId)
         .send({
           name: `New Family ${timestamp}`,
           phone: '1111111111',
@@ -114,6 +117,7 @@ describe('Families API Endpoints', () => {
     it('should return JSON error for missing required fields', async () => {
       const response = await request(app)
         .post('/api/families')
+        .set('x-user-id', testUserId)
         .send({
           phone: '2222222222'
         })
@@ -127,6 +131,7 @@ describe('Families API Endpoints', () => {
       const timestamp = Date.now()
       const response = await request(app)
         .post('/api/families')
+        .set('x-user-id', testUserId)
         .send({
           name: `Minimal Family ${timestamp}`,
           email: `minimal${timestamp}@example.com`
@@ -147,6 +152,7 @@ describe('Families API Endpoints', () => {
 
       const response = await request(app)
         .put(`/api/families/${testFamilyId}`)
+        .set('x-user-id', testUserId)
         .send({
           phone: '9999999999'
         })
@@ -161,6 +167,7 @@ describe('Families API Endpoints', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
         .put(`/api/families/${fakeId}`)
+        .set('x-user-id', testUserId)
         .send({ phone: '8888888888' })
         .expect('Content-Type', /json/)
         .expect(400)
@@ -198,6 +205,7 @@ describe('Families API Endpoints', () => {
       const timestamp = Date.now()
       const createResponse = await request(app)
         .post('/api/families')
+        .set('x-user-id', testUserId)
         .send({
           name: `Delete Me ${timestamp}`,
           email: `delete${timestamp}@example.com`
@@ -208,6 +216,7 @@ describe('Families API Endpoints', () => {
 
       const response = await request(app)
         .delete(`/api/families/${familyId}`)
+        .set('x-user-id', testUserId)
         .expect('Content-Type', /json/)
         .expect(200)
 
@@ -219,6 +228,7 @@ describe('Families API Endpoints', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
         .delete(`/api/families/${fakeId}`)
+        .set('x-user-id', testUserId)
         .expect('Content-Type', /json/)
         .expect(400)
 

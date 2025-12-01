@@ -80,8 +80,14 @@ describe('Reviews and Likes API Endpoints', () => {
       .get(`/api/books?familyId=${testFamilyId}`)
     
     if (booksResponse.body.books && booksResponse.body.books.length > 0) {
-      testBookId = booksResponse.body.books[0].id
-    } else {
+      // Books are grouped by catalog, we need a family_book ID from viewerContext
+      const firstBook = booksResponse.body.books[0];
+      if (firstBook.viewerContext?.ownedCopies?.[0]?.familyBookId) {
+        testBookId = firstBook.viewerContext.ownedCopies[0].familyBookId;
+      }
+    }
+    
+    if (!testBookId) {
       const bookResponse = await request(app)
         .post('/api/books')
         .set('x-user-id', testUserId)
@@ -90,7 +96,7 @@ describe('Reviews and Likes API Endpoints', () => {
           author: 'Review Author',
           family_id: testFamilyId
         })
-
+      
       if (bookResponse.body.book) {
         testBookId = bookResponse.body.book.id
       }

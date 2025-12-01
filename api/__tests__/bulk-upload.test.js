@@ -28,6 +28,7 @@ describe('Bulk Upload API Endpoints', () => {
     it('should return JSON error when no image is provided', async () => {
       const response = await request(app)
         .post('/api/books/detect-from-image')
+        .set('x-user-id', testUserId)
         .expect('Content-Type', /json/)
         .expect(400)
 

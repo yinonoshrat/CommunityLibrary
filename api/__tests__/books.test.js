@@ -21,8 +21,9 @@ describe('Books API Endpoints', () => {
       .get(`/api/books?familyId=${testFamilyId}`)
     
     if (booksResponse.body.books && booksResponse.body.books.length > 0) {
-      // Use first book from shared family
-      testBookId = booksResponse.body.books[0].id
+      // Use first book from shared family - get familyBookId from viewerContext
+      const firstBook = booksResponse.body.books[0]
+      testBookId = firstBook.viewerContext?.ownedCopies?.[0]?.familyBookId || firstBook.id
     } else {
       // Create a test book if none exists
       const bookResponse = await request(app)
@@ -220,6 +221,7 @@ describe('Books API Endpoints', () => {
     it('should return JSON error for missing required fields', async () => {
       const response = await request(app)
         .post('/api/books')
+        .set('x-user-id', testUserId)
         .send({
           author: 'Author Without Title'
         })
@@ -271,6 +273,7 @@ describe('Books API Endpoints', () => {
     it('should update book with valid data', async () => {
       const response = await request(app)
         .put(`/api/books/${testBookId}`)
+        .set('x-user-id', testUserId)
         .send({
           genre: 'Updated Genre'
         })
@@ -285,6 +288,7 @@ describe('Books API Endpoints', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
         .put(`/api/books/${fakeId}`)
+        .set('x-user-id', testUserId)
         .send({ genre: 'New Genre' })
         .expect('Content-Type', /json/)
         .expect(400)
@@ -311,6 +315,7 @@ describe('Books API Endpoints', () => {
 
       const response = await request(app)
         .delete(`/api/books/${bookId}`)
+        .set('x-user-id', testUserId)
         .expect('Content-Type', /json/)
         .expect(200)
 
@@ -322,6 +327,7 @@ describe('Books API Endpoints', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
         .delete(`/api/books/${fakeId}`)
+        .set('x-user-id', testUserId)
         .expect('Content-Type', /json/)
         .expect(400)
 

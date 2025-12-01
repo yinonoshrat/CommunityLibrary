@@ -2,11 +2,20 @@ import request from 'supertest'
 import { createClient } from '@supabase/supabase-js'
 import { beforeAll } from 'vitest'
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+// Initialize Supabase client (lazily to ensure env vars are loaded)
+let supabase = null;
+function getSupabase() {
+  if (!supabase) {
+    console.log('Initializing Supabase client with service role key');
+    console.log('URL:', process.env.SUPABASE_URL);
+    console.log('Service role key prefix:', process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) + '...');
+    supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+  }
+  return supabase;
+}
 
 // Shared test data that will be created once and reused
 export const TEST_USER = {
@@ -32,6 +41,7 @@ let sharedTestData = {
  * Initialize shared test user and family (call once in global setup)
  */
 export async function initializeSharedTestData(app) {
+  const supabase = getSupabase();
   try {
     // Check if user already exists in database
     const { data: existingUser, error: userCheckError } = await supabase
@@ -63,15 +73,19 @@ export async function initializeSharedTestData(app) {
     
     // If user already exists in auth, get the existing user
     if (result.error && (result.error.code === 'email_exists' || result.error.status === 422)) {
-      console.log('✓ Auth user already exists, fetching existing user')
-      // Get the auth user ID by listing users
-      const { data: usersData } = await supabase.auth.admin.listUsers()
-      const existingAuthUser = usersData.users.find(u => u.email === TEST_USER.email)
-      if (existingAuthUser) {
-        authData = { user: existingAuthUser }
-      } else {
-        throw new Error('Auth user exists but could not be found')
+      console.log('✓ Auth user already exists, signing in to get ID')
+      // Sign in to get the auth user ID
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email: TEST_USER.email,
+        password: TEST_USER.password
+      })
+      
+      if (signInError) {
+        console.error('✗ Failed to sign in existing user:', signInError)
+        throw new Error('Failed to sign in existing user')
       }
+      
+      authData = { user: signInData.user }
     } else if (result.error) {
       console.error('✗ Failed to create auth user:', result.error)
       throw new Error('Failed to create auth user')

@@ -118,6 +118,7 @@ describe('Users API Endpoints', () => {
 
       const response = await request(app)
         .put(`/api/users/${testUserId}`)
+        .set('x-user-id', testUserId)
         .send({
           phone: '9999999999',
           whatsapp: '8888888888'
@@ -135,6 +136,7 @@ describe('Users API Endpoints', () => {
 
       const response = await request(app)
         .put(`/api/users/${testUserId}`)
+        .set('x-user-id', testUserId)
         .send({
           full_name: 'Updated Name'
         })
@@ -148,6 +150,7 @@ describe('Users API Endpoints', () => {
       const fakeId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
         .put(`/api/users/${fakeId}`)
+        .set('x-user-id', testUserId)
         .send({ phone: '7777777777' })
         .expect('Content-Type', /json/)
         .expect(400)
@@ -161,6 +164,7 @@ describe('Users API Endpoints', () => {
       // Try to update email (should fail or be handled properly)
       const response = await request(app)
         .put(`/api/users/${testUserId}`)
+        .set('x-user-id', testUserId)
         .send({
           email: 'anotheremail@example.com'
         })
@@ -176,6 +180,7 @@ describe('Users API Endpoints', () => {
 
       const response = await request(app)
         .put(`/api/users/${testUserId}`)
+        .set('x-user-id', testUserId)
         .send({})
         .expect('Content-Type', /json/)
         .expect(400)
@@ -196,6 +201,7 @@ describe('Users API Endpoints', () => {
       // Update only phone
       const updateResponse = await request(app)
         .put(`/api/users/${testUserId}`)
+        .set('x-user-id', testUserId)
         .send({ phone: '6666666666' })
         .expect(200)
 
