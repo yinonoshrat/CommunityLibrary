@@ -1,5 +1,7 @@
 import { ThemeProvider, CssBaseline, Box } from '@mui/material'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { prefixer } from 'stylis'
 import rtlPlugin from 'stylis-plugin-rtl'
 import { CacheProvider } from '@emotion/react'
@@ -28,6 +30,18 @@ import SearchBooks from './pages/SearchBooks'
 const cacheRtl = createCache({
   key: 'muirtl',
   stylisPlugins: [prefixer, rtlPlugin as any],
+})
+
+// Create React Query client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30 * 1000, // Data fresh for 30 seconds
+      gcTime: 5 * 60 * 1000, // Cache kept for 5 minutes (formerly cacheTime)
+      refetchOnWindowFocus: false, // Don't refetch on window focus
+      retry: 1, // Retry failed requests once
+    },
+  },
 })
 
 function AppRoutes() {
@@ -66,16 +80,20 @@ function AppRoutes() {
 
 function App() {
   return (
-    <CacheProvider value={cacheRtl}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <AuthProvider>
-          <Router>
-            <AppRoutes />
-          </Router>
-        </AuthProvider>
-      </ThemeProvider>
-    </CacheProvider>
+    <QueryClientProvider client={queryClient}>
+      <CacheProvider value={cacheRtl}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <AuthProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </AuthProvider>
+        </ThemeProvider>
+      </CacheProvider>
+      {/* React Query Devtools - only in development */}
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+    </QueryClientProvider>
   )
 }
 

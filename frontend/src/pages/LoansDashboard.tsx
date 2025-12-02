@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import {
   Container,
   Typography,
@@ -8,7 +8,8 @@ import {
   Grid,
 } from '@mui/material'
 import { useAuth } from '../contexts/AuthContext'
-import { apiCall } from '../utils/apiCall'
+import { useUser } from '../hooks/useUser'
+import { useLoansByOwner, useLoansByBorrower } from '../hooks/useLoans'
 import CatalogBookCard from '../components/CatalogBookCard'
 import type { CatalogBook } from '../types'
 
@@ -73,6 +74,8 @@ const toCatalogBook = (loan: LoanRecord, viewerFamilyId: string | null): Catalog
       totalCopies: 1,
       availableCopies: 1,
       onLoanCopies: 0,
+      totalLikes: 0,
+      userLiked: false,
     },
     owners: [
       {
@@ -113,72 +116,26 @@ const getHistoryLabel = (loan: LoanRecord, viewerFamilyId: string | null) => {
 
 export default function LoansDashboard() {
   const { user } = useAuth()
-  const [historyLoans, setHistoryLoans] = useState<LoanRecord[]>([])
-  const [familyId, setFamilyId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
 
-  // Fetch family ID from user profile
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      if (!user?.id) {
-        setLoading(false);
-        return;
-      }
+  // Reactive hooks - automatic caching
+  const { data: userData } = useUser(user?.id)
+  const { data: lentLoans, isLoading: lentLoading } = useLoansByOwner(userData?.user?.family_id, 'returned')
+  const { data: borrowedLoans, isLoading: borrowedLoading } = useLoansByBorrower(userData?.user?.family_id, 'returned')
+  
+  const loading = lentLoading || borrowedLoading;
+  const viewerFamilyId = userData?.user?.family_id || null;
 
-      try {
-        const userData = await apiCall<{ user: any }>(`/api/users/${user.id}`);
-        
-        if (userData.user?.family_id) {
-          setFamilyId(userData.user.family_id);
-        } else {
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Error fetching user profile:', err);
-        setError('שגיאה בטעינת פרטי משתמש');
-        setLoading(false);
-      }
-    };
-
-    fetchUserProfile();
-  }, [user]);
-
-  const fetchHistory = async () => {
-    if (!familyId) return
-
-    setLoading(true)
-    setError('')
-
-    try {
-      const [ownerData, borrowerData] = await Promise.all([
-        apiCall<{ loans: LoanRecord[] }>(`/api/loans?ownerFamilyId=${familyId}&status=returned`),
-        apiCall<{ loans: LoanRecord[] }>(`/api/loans?borrowerFamilyId=${familyId}&status=returned`),
-      ])
-
-      const combined = [
-        ...(ownerData.loans || []),
-        ...(borrowerData.loans || []),
-      ].sort((a: LoanRecord, b: LoanRecord) => {
-        const aDate = new Date(a.actual_return_date || a.request_date || 0).getTime()
-        const bDate = new Date(b.actual_return_date || b.request_date || 0).getTime()
-        return bDate - aDate
-      })
-
-      setHistoryLoans(combined)
-    } catch (err) {
-      console.error('Error fetching history:', err)
-      setError(err instanceof Error ? err.message : 'שגיאה בטעינת היסטוריית ההשאלות')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (familyId) {
-      fetchHistory()
-    }
-  }, [familyId])
+  // Combine and sort loans
+  const historyLoans = useMemo(() => {
+    return [
+      ...(lentLoans?.loans || []),
+      ...(borrowedLoans?.loans || []),
+    ].sort((a: any, b: any) => {
+      const aDate = new Date(a.actual_return_date || a.request_date || 0).getTime()
+      const bDate = new Date(b.actual_return_date || b.request_date || 0).getTime()
+      return bDate - aDate
+    })
+  }, [lentLoans, borrowedLoans]);
 
   if (loading) {
     return (
@@ -201,19 +158,13 @@ export default function LoansDashboard() {
         </Typography>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-      )}
-
       {historyLoans.length === 0 ? (
         <Alert severity="info">אין רשומות היסטוריות להצגה</Alert>
       ) : (
         <Grid container spacing={3}>
           {historyLoans.map((loan) => {
-            const book = toCatalogBook(loan, familyId)
-            const historyLabel = getHistoryLabel(loan, familyId)
+            const book = toCatalogBook(loan, viewerFamilyId)
+            const historyLabel = getHistoryLabel(loan, viewerFamilyId)
             return (
               <Grid key={loan.id} size={{ xs: 12, md: 6 }}>
                 <CatalogBookCard book={book} />

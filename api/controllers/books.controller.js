@@ -95,7 +95,7 @@ function normalizeLoanRecord(loan) {
 /**
  * Group books by catalog for response
  */
-function groupBooksForResponse({ books, loanMap, likesMap, viewerFamilyId, view, sortBy }) {
+function groupBooksForResponse({ books, loanMap, likesMap, userLikesSet, viewerFamilyId, view, sortBy }) {
   const catalogMap = new Map();
 
   for (const book of books) {
@@ -130,6 +130,7 @@ function groupBooksForResponse({ books, loanMap, likesMap, viewerFamilyId, view,
           totalCopies: 0,
           availableCopies: 0,
           totalLikes: likesMap.get(catalogId) || 0,
+          userLiked: userLikesSet ? userLikesSet.has(catalogId) : false,
         },
       });
     }
@@ -228,9 +229,11 @@ export const getAllBooks = asyncHandler(async (req, res) => {
     limit,
     offset,
     sortBy,
+    userId: userIdQuery,
   } = req.query;
 
-  const userId = req.userId;
+  // Use userId from middleware (auth) or query param
+  const userId = req.userId || userIdQuery;
   const familyIdHeader = req.familyId;
   const view = (viewQuery || scopeQuery || (familyIdQuery ? 'my' : 'all') || 'my').toString();
 
@@ -313,18 +316,39 @@ export const getAllBooks = asyncHandler(async (req, res) => {
     });
   }
 
-  // Fetch likes count for all catalog IDs in one query
+  // Fetch likes count and user's like status for all catalog IDs in parallel
   const catalogIds = [...new Set(books.map((b) => b.book_catalog_id).filter(Boolean))];
   const likesMap = new Map();
+  const userLikesSet = new Set();
+  
   if (catalogIds.length > 0) {
-    const { data: likesData } = await supabase
-      .from('likes')
-      .select('book_catalog_id')
-      .in('book_catalog_id', catalogIds);
+    const likesPromises = [
+      // Count all likes per book
+      supabase
+        .from('likes')
+        .select('book_catalog_id')
+        .in('book_catalog_id', catalogIds),
+      // Check if current user liked each book (if user is authenticated)
+      userId
+        ? supabase
+            .from('likes')
+            .select('book_catalog_id')
+            .in('book_catalog_id', catalogIds)
+            .eq('user_id', userId)
+        : Promise.resolve({ data: [] }),
+    ];
 
-    if (likesData) {
-      for (const like of likesData) {
+    const [likesResult, userLikesResult] = await Promise.all(likesPromises);
+
+    if (likesResult.data) {
+      for (const like of likesResult.data) {
         likesMap.set(like.book_catalog_id, (likesMap.get(like.book_catalog_id) || 0) + 1);
+      }
+    }
+
+    if (userLikesResult.data) {
+      for (const like of userLikesResult.data) {
+        userLikesSet.add(like.book_catalog_id);
       }
     }
   }
@@ -333,6 +357,7 @@ export const getAllBooks = asyncHandler(async (req, res) => {
     books,
     loanMap,
     likesMap,
+    userLikesSet,
     viewerFamilyId,
     view,
     sortBy,
@@ -404,6 +429,37 @@ export const getBookById = asyncHandler(async (req, res) => {
     if (!book) {
       return res.status(404).json({ error: 'Book not found' });
     }
+
+    // Add like stats for the book
+    const userId = req.query.user_id;
+    
+    if (book.book_catalog_id && userId) {
+      // Fetch total likes count
+      const { count: totalLikes, error: likesError } = await supabase
+        .from('book_likes')
+        .select('*', { count: 'exact', head: true })
+        .eq('book_catalog_id', book.book_catalog_id);
+
+      if (likesError) throw likesError;
+
+      // Check if user liked this book
+      const { data: userLike, error: userLikeError } = await supabase
+        .from('book_likes')
+        .select('like_id')
+        .eq('book_catalog_id', book.book_catalog_id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (userLikeError) throw userLikeError;
+
+      // Add stats to book object
+      book.stats = {
+        ...book.stats,
+        totalLikes: totalLikes || 0,
+        userLiked: !!userLike
+      };
+    }
+
     res.json({ book });
   } catch (error) {
     // Handle invalid UUID or other database errors

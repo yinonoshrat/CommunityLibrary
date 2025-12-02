@@ -23,7 +23,7 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { apiCall } from '../utils/apiCall'
+import { useBooks } from '../hooks/useBooks'
 import CatalogBookCard from '../components/CatalogBookCard'
 import ReturnBookDialog from '../components/ReturnBookDialog'
 import type { CatalogBook, BookLoanSummary } from '../types'
@@ -75,12 +75,20 @@ export default function MyBooks() {
   const [statusFilter, setStatusFilter] = useState(initialStatus)
   const [genreFilter, setGenreFilter] = useState(initialGenre)
   const [sortBy, setSortBy] = useState(initialSort)
-  const [books, setBooks] = useState<CatalogBook[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [selectedLoan, setSelectedLoan] = useState<ReturnDialogLoan | null>(null)
   const [returnDialogOpen, setReturnDialogOpen] = useState(false)
-  const [refreshFlag, setRefreshFlag] = useState(0)
+
+  // Reactive hook - automatic caching and refetching
+  const { data: booksResponse, isLoading: loading, error: booksError, refetch } = useBooks({
+    view,
+    q: searchQuery.trim() || undefined,
+    status: statusFilter !== 'all' ? (statusFilter as 'available' | 'on_loan') : undefined,
+    genre: genreFilter !== 'all' ? genreFilter : undefined,
+    sortBy: sortBy !== 'title' ? sortBy : undefined,
+  });
+  
+  const books = booksResponse?.books || [];
+  const error = booksError ? (booksError as Error).message : '';
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -91,47 +99,6 @@ export default function MyBooks() {
     if (sortBy !== 'title') params.set('sortBy', sortBy)
     setSearchParams(params, { replace: true })
   }, [view, searchQuery, statusFilter, genreFilter, sortBy, setSearchParams])
-
-  useEffect(() => {
-    let isCancelled = false
-
-    const loadBooks = async () => {
-      setLoading(true)
-      setError('')
-      try {
-        const params = new URLSearchParams()
-        params.set('view', view)
-        if (searchQuery.trim()) params.set('search', searchQuery.trim())
-        if (statusFilter !== 'all') params.set('status', statusFilter)
-        if (genreFilter !== 'all') params.set('genre', genreFilter)
-        if (sortBy !== 'title') params.set('sortBy', sortBy)
-
-        const response = await apiCall<{ books: CatalogBook[]; meta?: { message?: string } }>(`/api/books?${params.toString()}`)
-        if (!isCancelled) {
-          setBooks(response.books || [])
-          // Show info message if no family is associated
-          if (response.meta?.message && (response.books || []).length === 0) {
-            setError('')
-            // You could also set a separate info state here if you want to display it differently
-          }
-        }
-      } catch (err) {
-        if (!isCancelled) {
-          console.error('Failed to load books', err)
-          setError(err instanceof Error ? err.message : 'שגיאה בטעינת הספרים')
-        }
-      } finally {
-        if (!isCancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    loadBooks()
-    return () => {
-      isCancelled = true
-    }
-  }, [view, searchQuery, statusFilter, genreFilter, sortBy, refreshFlag])
 
   const uniqueGenres = useMemo(() => {
     const dynamic = new Set<string>()
@@ -153,7 +120,7 @@ export default function MyBooks() {
   }
 
   const handleRefresh = () => {
-    setRefreshFlag(Date.now())
+    refetch();
   }
 
   const handleMarkReturned = ({ book, loan }: { book: CatalogBook; loan: BookLoanSummary }) => {
@@ -184,45 +151,15 @@ export default function MyBooks() {
     setSelectedLoan(null)
   }
 
-  const handleLoanCreated = (catalogId: string, loan: any) => {
-    // Update the book in place instead of reloading all books
-    setBooks(prevBooks => prevBooks.map(book => {
-      if (book.catalogId === catalogId) {
-        // Update the viewer's owned copy to show it's now on loan
-        const updatedOwnedCopies = book.viewerContext.ownedCopies.map(copy => ({
-          ...copy,
-          loan: {
-            id: loan.id,
-            status: loan.status || 'active',
-            familyBookId: copy.familyBookId,
-            borrowerFamilyId: loan.borrower_family_id,
-            ownerFamilyId: loan.owner_family_id,
-            borrowerFamily: loan.borrower_family,
-            dueDate: loan.due_date,
-            requestDate: loan.created_at,
-            approvedDate: loan.approved_date
-          } as BookLoanSummary
-        }))
-        return {
-          ...book,
-          viewerContext: {
-            ...book.viewerContext,
-            ownedCopies: updatedOwnedCopies
-          },
-          stats: {
-            ...book.stats,
-            availableCopies: Math.max(0, book.stats.availableCopies - 1)
-          }
-        }
-      }
-      return book
-    }))
+  const handleLoanCreated = () => {
+    // Auto-refetch books to get updated loan status
+    refetch();
   }
 
   const handleReturnSuccess = () => {
     setReturnDialogOpen(false)
     setSelectedLoan(null)
-    setRefreshFlag(Date.now())
+    refetch(); // Refresh books list after return
   }
 
   const subtitle = {

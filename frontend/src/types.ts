@@ -152,6 +152,8 @@ export interface CatalogBook {
     totalCopies: number;
     availableCopies: number;
     onLoanCopies: number;
+    totalLikes: number;
+    userLiked: boolean;
   };
   likesCount: number;
   owners: BookOwner[];

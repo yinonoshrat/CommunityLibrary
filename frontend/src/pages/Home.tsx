@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Container,
   Typography,
@@ -23,18 +23,9 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { apiCall } from '../utils/apiCall';
-
-interface CatalogStats {
-  totalBooks: number;
-  booksOnLoan: number;
-  booksAvailable: number;
-}
-
-interface LoanStatus {
-  booksLent: number;
-  booksBorrowed: number;
-}
+import { useUser } from '../hooks/useUser';
+import { useBooks, useBookSearch } from '../hooks/useBooks';
+import { useLoansByOwner, useLoansByBorrower } from '../hooks/useLoans';
 
 interface BookSuggestion {
   id: string;
@@ -47,90 +38,41 @@ export default function Home() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<BookSuggestion[]>([]);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [catalogStats, setCatalogStats] = useState<CatalogStats>({
-    totalBooks: 0,
-    booksOnLoan: 0,
-    booksAvailable: 0,
+
+  // Use reactive hooks - data is cached and shared across components!
+  // If Home.tsx is visited again, cached data shows instantly while fresh data loads in background
+  const { data: userData, isLoading: userLoading } = useUser(user?.id);
+  const familyId = userData?.user?.family_id;
+
+  // These queries automatically run when familyId is available
+  const { data: booksData, isLoading: booksLoading } = useBooks({ familyId, userId: user?.id }, { enabled: !!familyId });
+  const { data: loansOutData, isLoading: loansOutLoading } = useLoansByOwner(familyId, 'active');
+  const { data: loansInData, isLoading: loansInLoading } = useLoansByBorrower(familyId, 'active');
+
+  // Search suggestions with debouncing
+  const { data: searchData, isLoading: loadingSuggestions } = useBookSearch(searchQuery, {
+    enabled: searchQuery.trim().length >= 2,
   });
-  const [loanStatus, setLoanStatus] = useState<LoanStatus>({
-    booksLent: 0,
-    booksBorrowed: 0,
-  });
+  const suggestions = searchData?.books?.slice(0, 5) || [];
 
-  // Fetch book suggestions when search query changes
-  useEffect(() => {
-    const fetchSuggestions = async () => {
-      if (searchQuery.trim().length < 2) {
-        setSuggestions([]);
-        return;
-      }
+  // Compute stats from cached data
+  const books = booksData?.books || [];
+  const loansOut = loansOutData?.loans || [];
+  const loansIn = loansInData?.loans || [];
 
-      setLoadingSuggestions(true);
-      try {
-        const response = await apiCall<{ books: BookSuggestion[] }>(
-          `/api/books/search?q=${encodeURIComponent(searchQuery)}`
-        );
-        setSuggestions(response.books.slice(0, 5) || []); // Limit to 5 suggestions
-      } catch (error) {
-        console.error('Failed to fetch suggestions:', error);
-        setSuggestions([]);
-      } finally {
-        setLoadingSuggestions(false);
-      }
-    };
+  const catalogStats = {
+    totalBooks: books.length,
+    booksOnLoan: loansOut.length,
+    booksAvailable: books.length - loansOut.length,
+  };
 
-    const timeoutId = setTimeout(fetchSuggestions, 300); // Debounce
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
+  const loanStatus = {
+    booksLent: loansOut.length,
+    booksBorrowed: loansIn.length,
+  };
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      if (!user?.id) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        // Get user profile to get family_id
-        const userResponse = await apiCall<{ user: any }>(`/api/users/${user.id}`);
-        const familyId = userResponse.user?.family_id;
-
-        if (familyId) {
-          // Get catalog stats
-          const [booksResponse, loansOutResponse, loansInResponse] = await Promise.all([
-            apiCall<{ books: any[] }>(`/api/books?familyId=${familyId}`),
-            apiCall<{ loans: any[] }>(`/api/loans?ownerFamilyId=${familyId}&status=active`),
-            apiCall<{ loans: any[] }>(`/api/loans?borrowerFamilyId=${familyId}&status=active`),
-          ]);
-
-          const books = booksResponse.books || [];
-          const loansOut = loansOutResponse.loans || [];
-          const loansIn = loansInResponse.loans || [];
-
-          setCatalogStats({
-            totalBooks: books.length,
-            booksOnLoan: loansOut.length,
-            booksAvailable: books.length - loansOut.length,
-          });
-
-          setLoanStatus({
-            booksLent: loansOut.length,
-            booksBorrowed: loansIn.length,
-          });
-        }
-
-        setLoading(false);
-      } catch (error) {
-        console.error('Failed to fetch stats:', error);
-        setLoading(false);
-      }
-    };
-
-    fetchStats();
-  }, [user]);
+  // Overall loading state - true only on initial load
+  const loading = userLoading || (familyId && (booksLoading || loansOutLoading || loansInLoading));
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -15,7 +15,8 @@ import {
   Box,
   Typography
 } from '@mui/material';
-import { apiCall } from '../utils/apiCall';
+import { useFamilies } from '../hooks/useFamilies';
+import { useCreateLoan } from '../hooks/useLoanMutations';
 
 interface CreateLoanDialogProps {
   open: boolean;
@@ -30,13 +31,6 @@ interface CreateLoanDialogProps {
   onSuccess: (loan?: any) => void;
 }
 
-interface Family {
-  id: string;
-  name: string;
-  phone: string;
-  whatsapp?: string;
-}
-
 export default function CreateLoanDialog({
   open,
   onClose,
@@ -45,31 +39,29 @@ export default function CreateLoanDialog({
   userId,
   onSuccess
 }: CreateLoanDialogProps) {
-  const [families, setFamilies] = useState<Family[]>([]);
   const [selectedFamilyId, setSelectedFamilyId] = useState('');
   const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (open) {
-      fetchFamilies();
-    }
-  }, [open]);
+  // Use cached families data with stale-while-revalidate
+  const { data: familiesData, isLoading: loadingFamilies } = useFamilies();
+  
+  // Filter out current user's family
+  const families = useMemo(() => {
+    if (!familiesData) return [];
+    return familiesData.filter((f) => String(f.family_id) !== userFamilyId);
+  }, [familiesData, userFamilyId]);
 
-  const fetchFamilies = async () => {
-    try {
-      const data = await apiCall<{ families: Family[] }>('/api/families');
-      // Filter out the current user's family
-      const otherFamilies = data.families.filter(
-        (f: Family) => f.id !== userFamilyId
-      );
-      setFamilies(otherFamilies);
-    } catch (err) {
-      console.error('Error fetching families:', err);
-      setError('שגיאה בטעינת רשימת המשפחות');
-    }
-  };
+  // Use mutation hook for creating loan
+  const createLoan = useCreateLoan({
+    onSuccess: (data) => {
+      onSuccess(data);
+      handleClose();
+    },
+    onError: (err: Error) => {
+      setError(err.message || 'שגיאה ביצירת ההשאלה');
+    },
+  });
 
   const handleSubmit = async () => {
     if (!selectedFamilyId) {
@@ -77,29 +69,14 @@ export default function CreateLoanDialog({
       return;
     }
 
-    setLoading(true);
     setError('');
-
-    try {
-      const data = await apiCall<{ loan: any }>('/api/loans', {
-        method: 'POST',
-        body: JSON.stringify({
-          family_book_id: book.id,
-          borrower_family_id: selectedFamilyId,
-          owner_family_id: userFamilyId,
-          requester_user_id: userId,
-          notes: notes || null
-        }),
-      });
-
-      onSuccess(data.loan);
-      handleClose();
-    } catch (err: any) {
-      console.error('Error creating loan:', err);
-      setError(err.message || 'שגיאה ביצירת ההשאלה');
-    } finally {
-      setLoading(false);
-    }
+    createLoan.mutate({
+      family_book_id: book.id,
+      borrower_family_id: selectedFamilyId,
+      owner_family_id: userFamilyId,
+      requester_user_id: userId,
+      notes: notes || null,
+    });
   };
 
   const handleClose = () => {
@@ -127,14 +104,14 @@ export default function CreateLoanDialog({
               value={selectedFamilyId}
               onChange={(e) => setSelectedFamilyId(e.target.value)}
               label="משפחה שואלת"
-              disabled={loading}
+              disabled={createLoan.isPending || loadingFamilies}
             >
               <MenuItem value="">
                 <em>בחר משפחה</em>
               </MenuItem>
               {families.map((family) => (
-                <MenuItem key={family.id} value={family.id}>
-                  {family.name}
+                <MenuItem key={family.family_id} value={String(family.family_id)}>
+                  {family.family_name}
                 </MenuItem>
               ))}
             </Select>
@@ -147,7 +124,7 @@ export default function CreateLoanDialog({
             rows={3}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            disabled={loading}
+            disabled={createLoan.isPending}
             placeholder="הערות על מצב הספר, תאריך החזרה מצופה וכו'"
           />
 
@@ -159,14 +136,14 @@ export default function CreateLoanDialog({
         </Box>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}>
-        <Button onClick={handleClose} disabled={loading}>
+        <Button onClick={handleClose} disabled={createLoan.isPending}>
           ביטול
         </Button>
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={loading || !selectedFamilyId}
-          startIcon={loading ? <CircularProgress size={20} /> : null}
+          disabled={createLoan.isPending || !selectedFamilyId}
+          startIcon={createLoan.isPending ? <CircularProgress size={20} /> : null}
         >
           השאל
         </Button>

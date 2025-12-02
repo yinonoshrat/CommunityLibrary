@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Container,
   Typography,
@@ -26,94 +26,35 @@ import {
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useBook } from '../hooks/useBooks';
+import { useUser } from '../hooks/useUser';
+import { useLoansByBook } from '../hooks/useLoans';
 import { apiCall } from '../utils/apiCall';
 import CreateLoanDialog from '../components/CreateLoanDialog';
 import ReturnBookDialog from '../components/ReturnBookDialog';
 import BookReviews from '../components/BookReviews';
 import LikeButton from '../components/LikeButton';
 
-interface Book {
-  id: string;
-  title: string;
-  author: string;
-  series?: string;
-  series_number?: number;
-  isbn?: string;
-  year_published?: number;
-  publisher?: string;
-  genre?: string;
-  age_range?: string;
-  pages?: number;
-  description?: string;
-  cover_image_url?: string;
-  status: 'available' | 'on_loan' | 'borrowed';
-  family_id: string;
-  created_at: string;
-}
-
 export default function BookDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [book, setBook] = useState<Book | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [userFamilyId, setUserFamilyId] = useState<string | null>(null);
+  
+  // Reactive hooks - automatic caching and refetching
+  const { data: userData } = useUser(user?.id);
+  const { data: bookResponse, isLoading: loading, error: bookError } = useBook(id ? parseInt(id) : null, user?.id);
+  const { data: activeLoansResponse } = useLoansByBook(id ? String(id) : undefined, 'active');
+  
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
-  const [activeLoan, setActiveLoan] = useState<any>(null);
 
-  useEffect(() => {
-    fetchUserFamily();
-    if (id) {
-      fetchBook();
-    }
-  }, [id, user]);
-
-  const fetchUserFamily = async () => {
-    if (!user?.id) return;
-
-    try {
-      const userResponse = await apiCall<{ user: any }>(`/api/users/${user.id}`);
-      setUserFamilyId(userResponse.user?.family_id);
-    } catch (err) {
-      console.error('Failed to fetch user family:', err);
-    }
-  };
-
-  const fetchBook = async () => {
-    if (!id) return;
-
-    try {
-      setError(null);
-      const response = await apiCall<{ book: Book }>(`/api/books/${id}`);
-      setBook(response.book);
-      
-      // If book is on loan and user is owner, fetch the active loan
-      if (response.book.status === 'on_loan' && userFamilyId && response.book.family_id === userFamilyId) {
-        fetchActiveLoan(response.book.id);
-      }
-      
-      setLoading(false);
-    } catch (err: any) {
-      console.error('Failed to fetch book:', err);
-      setError(err.message || 'שגיאה בטעינת פרטי הספר');
-      setLoading(false);
-    }
-  };
-
-  const fetchActiveLoan = async (bookId: string) => {
-    try {
-      const response = await apiCall<{ loans: any[] }>(`/api/loans?bookId=${bookId}&status=active`);
-      if (response.loans && response.loans.length > 0) {
-        setActiveLoan(response.loans[0]);
-      }
-    } catch (err) {
-      console.error('Failed to fetch active loan:', err);
-    }
-  };
+  const book = bookResponse?.book;
+  const userFamilyId = userData?.user?.family_id;
+  const activeLoans = activeLoansResponse?.loans || [];
+  const activeLoan = activeLoans.length > 0 ? activeLoans[0] : null;
+  const error = bookError ? (bookError as Error).message : null;
 
   const handleDelete = async () => {
     if (!book) return;
@@ -126,19 +67,18 @@ export default function BookDetails() {
       navigate('/books');
     } catch (err: any) {
       console.error('Failed to delete book:', err);
-      setError(err.message || 'שגיאה במחיקת הספר');
+      // Could add error toast notification here
       setDeleting(false);
       setDeleteDialogOpen(false);
     }
   };
 
   const handleLoanSuccess = () => {
-    fetchBook(); // Refresh book details to update status
+    // TanStack Query will auto-invalidate and refetch book/loan data
   };
 
   const handleReturnSuccess = () => {
-    setActiveLoan(null);
-    fetchBook(); // Refresh book details to update status
+    // TanStack Query will auto-invalidate and refetch book/loan data
   };
 
   const getStatusConfig = () => {
@@ -329,7 +269,13 @@ export default function BookDetails() {
 
             {/* Like Button */}
             <Box mb={3}>
-              <LikeButton bookId={book.id} size="medium" showCount={true} />
+              <LikeButton 
+                bookId={book.id} 
+                initialLiked={book.stats?.userLiked || false}
+                initialCount={book.stats?.totalLikes || 0}
+                size="medium" 
+                showCount={true} 
+              />
             </Box>
 
             {isOwner && (

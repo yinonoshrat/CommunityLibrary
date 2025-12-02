@@ -1,91 +1,93 @@
 import { useState, useEffect } from 'react';
 import { IconButton, Box, Typography, Tooltip } from '@mui/material';
 import { Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';
-import { apiCall } from '../utils/apiCall';
 import { useAuth } from '../contexts/AuthContext';
+import { useToggleBookLike } from '../hooks/useBookLikes';
 
 interface LikeButtonProps {
   bookId: string;
+  initialLiked?: boolean;
+  initialCount?: number;
   size?: 'small' | 'medium' | 'large';
   showCount?: boolean;
 }
 
-export default function LikeButton({ bookId, size = 'medium', showCount = true }: LikeButtonProps) {
+export default function LikeButton({ 
+  bookId, 
+  initialLiked = false, 
+  initialCount = 0, 
+  size = 'medium', 
+  showCount = true 
+}: LikeButtonProps) {
   const { user } = useAuth();
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
-  const [loading, setLoading] = useState(false);
+  
+  // Track optimistic state separately to show instant feedback
+  const [optimisticLiked, setOptimisticLiked] = useState(initialLiked);
+  const [optimisticCount, setOptimisticCount] = useState(initialCount);
+  const [isOptimistic, setIsOptimistic] = useState(false);
 
+  // Update when props change (from cache updates), but only when not in optimistic state
   useEffect(() => {
-    loadLikes();
-  }, [bookId]);
-
-  const loadLikes = async () => {
-    try {
-      const data = await apiCall(`/api/books/${bookId}/likes`);
-      setLikeCount(data.count || 0);
-      setLiked(data.likes?.some((like: any) => like.user_id === user?.id) || false);
-    } catch (err) {
-      console.error('Error loading likes:', err);
+    if (!isOptimistic) {
+      setOptimisticLiked(initialLiked);
+      setOptimisticCount(initialCount);
+    } else {
+      // If we're in optimistic mode and props have caught up with optimistic state, exit optimistic mode
+      if (initialLiked === optimisticLiked && initialCount === optimisticCount) {
+        setIsOptimistic(false);
+      }
     }
-  };
+  }, [initialLiked, initialCount, isOptimistic, optimisticLiked, optimisticCount]);
+  
+  // Use mutation with optimistic updates
+  const toggleLike = useToggleBookLike(bookId, user?.id, {
+    // Optimistically update local state immediately
+    onMutate: () => {
+      setIsOptimistic(true);
+      setOptimisticLiked(prev => !prev);
+      setOptimisticCount(prev => optimisticLiked ? Math.max(0, prev - 1) : prev + 1);
+    },
+    // On success, stay in optimistic mode until props catch up (handled in useEffect)
+    onSuccess: () => {
+      // Don't exit optimistic mode here - let useEffect handle it when props update
+    },
+    // On error, revert immediately
+    onError: () => {
+      setIsOptimistic(false);
+      setOptimisticLiked(initialLiked);
+      setOptimisticCount(initialCount);
+    },
+  });
 
   const handleToggleLike = async () => {
-    if (!user?.id || loading) return;
-
-    // Optimistically update UI immediately
-    const wasLiked = liked;
-    setLiked(!liked);
-    setLikeCount(prev => liked ? Math.max(0, prev - 1) : prev + 1);
-
-    try {
-      setLoading(true);
-      const data = await apiCall(`/api/books/${bookId}/likes`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: user.id,
-        }),
-      });
-
-      // Verify server response matches our optimistic update
-      if (data.liked !== !wasLiked) {
-        // Server returned different state, revert
-        setLiked(data.liked);
-        setLikeCount(prev => data.liked ? prev + 1 : Math.max(0, prev - 1));
-      }
-    } catch (err) {
-      console.error('Error toggling like:', err);
-      // Revert optimistic update on error
-      setLiked(wasLiked);
-      setLikeCount(prev => wasLiked ? prev + 1 : Math.max(0, prev - 1));
-    } finally {
-      setLoading(false);
-    }
+    if (!user?.id || toggleLike.isPending) return;
+    toggleLike.mutate();
   };
+
+  const liked = optimisticLiked;
+  const likeCount = optimisticCount;
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-      <Tooltip title={liked ? 'הסר מהמועדפים' : 'הוסף למועדפים'}>
-        <IconButton
-          onClick={handleToggleLike}
-          disabled={loading}
-          size={size}
-          color={liked ? 'error' : 'default'}
-          sx={{
-            transition: 'transform 0.2s',
-            '&:hover': {
-              transform: 'scale(1.1)',
-            },
-          }}
-        >
-          {liked ? <FavoriteIcon /> : <FavoriteBorderIcon />}
-        </IconButton>
+      <Tooltip title={user ? (liked ? 'Unlike' : 'Like') : 'Login to like'}>
+        <span>
+          <IconButton
+            onClick={handleToggleLike}
+            disabled={!user || toggleLike.isPending}
+            size={size}
+            color={liked ? 'error' : 'default'}
+            sx={{
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                transform: 'scale(1.1)',
+              },
+            }}
+          >
+            {liked ? <FavoriteIcon fontSize={size} /> : <FavoriteBorderIcon fontSize={size} />}
+          </IconButton>
+        </span>
       </Tooltip>
-      
-      {showCount && likeCount > 0 && (
+      {showCount && (
         <Typography variant="body2" color="text.secondary">
           {likeCount}
         </Typography>

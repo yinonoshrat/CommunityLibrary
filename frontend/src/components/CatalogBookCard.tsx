@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Card,
   CardActionArea,
@@ -19,7 +19,7 @@ import {
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { apiCall } from '../utils/apiCall'
+import { useUser } from '../hooks/useUser'
 import LikeButton from './LikeButton'
 import CreateLoanDialog from './CreateLoanDialog'
 import type { CatalogBook, BookLoanSummary } from '../types'
@@ -50,28 +50,14 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
   const navigate = useNavigate()
   const { user } = useAuth()
   const [loanDialogOpen, setLoanDialogOpen] = useState(false)
-  const [userFamilyId, setUserFamilyId] = useState<string>('')
+  
+  // Use reactive hook for user data - automatic caching
+  const { data: userResponse } = useUser(user?.id)
+  const userFamilyId = userResponse?.user?.family_id || ''
+  
   const primaryFamilyBookId = useMemo(() => getPrimaryFamilyBookId(book), [book])
   const viewerLoan = book.viewerContext.borrowedLoan
   const viewerOwnedCopy = book.viewerContext.ownedCopies[0]
-
-  // Fetch user's family ID
-  useEffect(() => {
-    const fetchUserFamily = async () => {
-      if (!user?.id) return;
-      
-      try {
-        const data = await apiCall<{ user: any }>(`/api/users/${user.id}`);
-        if (data.user?.family_id) {
-          setUserFamilyId(data.user.family_id);
-        }
-      } catch (err) {
-        console.error('Failed to fetch user family:', err);
-      }
-    };
-    
-    fetchUserFamily();
-  }, [user?.id]);
 
   const handleNavigate = () => {
     if (primaryFamilyBookId) {
@@ -284,9 +270,13 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
         <Button variant="text" size="small" onClick={handleNavigate}>
           פרטים
         </Button>
-        {primaryFamilyBookId && (
-          <LikeButton bookId={primaryFamilyBookId} size="small" showCount />
-        )}
+        <LikeButton 
+          bookId={book.catalogId} 
+          initialLiked={book.stats.userLiked}
+          initialCount={book.stats.totalLikes}
+          size="small" 
+          showCount 
+        />
       </Box>
 
       {/* Create Loan Dialog */}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Container,
   Paper,
@@ -12,94 +12,61 @@ import {
 } from '@mui/material';
 import { Edit, Save, Cancel } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { useUser, useUserFamily } from '../hooks/useUser';
 import { apiCall } from '../utils/apiCall';
 import { supabase } from '../lib/supabase';
 
-interface UserProfile {
-  id: string;
-  fullName: string;
-  phone: string;
-  email: string;
-  familyId: string;
-  isFamilyAdmin: boolean;
-}
-
-interface Family {
-  id: string;
-  name: string;
-  phone: string;
-  whatsapp: string;
-}
-
 export default function Profile() {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [family, setFamily] = useState<Family | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [editedProfile, setEditedProfile] = useState({
     fullName: '',
     phone: '',
   });
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
-
-  const loadProfile = async () => {
-    try {
-      setLoading(true);
-      setError('');
-
-      const { data: { user } } = await supabase.auth.getUser();
+  // Get current user ID
+  useState(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) {
         navigate('/login');
-        return;
+      } else {
+        setUserId(user.id);
       }
+    });
+  });
 
-      // Get user profile
-      const userResponse = await apiCall(`/api/users/${user.id}`);
-      if (!userResponse.ok) {
-        throw new Error('Failed to load profile');
-      }
-      const userData = await userResponse.json();
-      
-      setProfile({
-        id: userData.user.id,
-        fullName: userData.user.full_name,
-        phone: userData.user.phone || '',
-        email: userData.user.email,
-        familyId: userData.user.family_id,
-        isFamilyAdmin: userData.user.is_family_admin,
-      });
+  // Reactive hooks - automatic caching
+  const { data: userResponse, isLoading: userLoading } = useUser(userId || undefined);
+  const { data: familyResponse, isLoading: familyLoading } = useUserFamily(userId || undefined);
+  
+  const loading = userLoading || familyLoading;
+  const profile = userResponse?.user ? {
+    id: userResponse.user.id,
+    fullName: userResponse.user.full_name,
+    phone: userResponse.user.phone || '',
+    email: userResponse.user.email,
+    familyId: userResponse.user.family_id,
+    isFamilyAdmin: userResponse.user.is_family_admin,
+  } : null;
+  
+  const family = familyResponse?.family ? {
+    id: familyResponse.family.id,
+    name: familyResponse.family.name,
+    phone: familyResponse.family.phone || '',
+    whatsapp: familyResponse.family.whatsapp || '',
+  } : null;
 
-      setEditedProfile({
-        fullName: userData.user.full_name,
-        phone: userData.user.phone || '',
-      });
-
-      // Get family info
-      if (userData.user.family_id) {
-        const familyResponse = await apiCall(`/api/families/${userData.user.family_id}`);
-        if (familyResponse.ok) {
-          const familyData = await familyResponse.json();
-          setFamily({
-            id: familyData.family.id,
-            name: familyData.family.name,
-            phone: familyData.family.phone || '',
-            whatsapp: familyData.family.whatsapp || '',
-          });
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'שגיאה בטעינת הפרופיל');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Initialize edit form when profile loads
+  if (profile && !editedProfile.fullName) {
+    setEditedProfile({
+      fullName: profile.fullName,
+      phone: profile.phone,
+    });
+  }
 
   const handleSave = async () => {
     if (!profile) return;
@@ -123,12 +90,7 @@ export default function Profile() {
         throw new Error(data.error || 'שגיאה בשמירת השינויים');
       }
 
-      setProfile({
-        ...profile,
-        fullName: editedProfile.fullName,
-        phone: editedProfile.phone,
-      });
-
+      // TanStack Query will auto-invalidate and refetch user data
       setSuccess('השינויים נשמרו בהצלחה');
       setEditing(false);
     } catch (err) {
