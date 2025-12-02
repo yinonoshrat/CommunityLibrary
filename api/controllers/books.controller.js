@@ -73,20 +73,20 @@ function normalizeLoanRecord(loan) {
     requestDate: loan.request_date || loan.created_at,
     approvedDate: loan.approved_date,
     returnDate: loan.return_date,
-    borrowerFamily: loan.borrower_families
+    borrowerFamily: loan.borrower_family
       ? {
-          id: loan.borrower_families.id,
-          name: loan.borrower_families.name,
-          phone: loan.borrower_families.phone,
-          whatsapp: loan.borrower_families.whatsapp,
+          id: loan.borrower_family.id,
+          name: loan.borrower_family.name,
+          phone: loan.borrower_family.phone,
+          whatsapp: loan.borrower_family.whatsapp,
         }
       : null,
-    ownerFamily: loan.owner_families
+    ownerFamily: loan.owner_family
       ? {
-          id: loan.owner_families.id,
-          name: loan.owner_families.name,
-          phone: loan.owner_families.phone,
-          whatsapp: loan.owner_families.whatsapp,
+          id: loan.owner_family.id,
+          name: loan.owner_family.name,
+          phone: loan.owner_family.phone,
+          whatsapp: loan.owner_family.whatsapp,
         }
       : null,
   };

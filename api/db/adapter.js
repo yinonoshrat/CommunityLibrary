@@ -556,7 +556,15 @@ export const db = {
       const { data, error } = await supabase
         .from('loans')
         .insert(loan)
-        .select()
+        .select(`
+          *,
+          family_books!family_book_id(
+            id,
+            book_catalog(title, title_hebrew, author, cover_image_url)
+          ),
+          borrower_family:families!borrower_family_id(name, phone, whatsapp),
+          owner_family:families!owner_family_id(name, phone, whatsapp)
+        `)
         .single()
       if (error) {
         console.error('Supabase error creating loan:', error);

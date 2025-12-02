@@ -133,8 +133,10 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
             {viewerOwnedCopy.loan ? (
               <Stack spacing={0.5}>
                 <Typography variant="caption" color="warning.main" fontWeight={600}>
-                  מושאל ל: {viewerOwnedCopy.loan.borrowerFamily?.name}
-                  {viewerOwnedCopy.loan.dueDate && ` (עד ${formatDate(viewerOwnedCopy.loan.dueDate)})`}
+                  <bdi>
+                    מושאל ל: {viewerOwnedCopy.loan.borrowerFamily?.name || 'טוען...'}
+                    {viewerOwnedCopy.loan.dueDate && ` (עד ${formatDate(viewerOwnedCopy.loan.dueDate)})`}
+                  </bdi>
                 </Typography>
                 <Button
                   variant="outlined"
@@ -167,8 +169,10 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
         {viewerLoan && (
           <Box sx={{ mb: 1 }}>
             <Typography variant="caption" color="info.main" display="block" gutterBottom>
-              שאלתי מ: {viewerLoan.ownerFamily?.name}
-              {viewerLoan.dueDate && ` (עד ${formatDate(viewerLoan.dueDate)})`}
+              <bdi>
+                שאלתי מ: {viewerLoan.ownerFamily?.name || 'טוען...'}
+                {viewerLoan.dueDate && ` (עד ${formatDate(viewerLoan.dueDate)})`}
+              </bdi>
             </Typography>
             <Stack direction="row" spacing={0.5}>
               {viewerLoan.ownerFamily?.whatsapp && (

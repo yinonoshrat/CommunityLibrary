@@ -123,7 +123,13 @@ export default function MyBooks() {
     refetch();
   }
 
+  const [selectedFamilyBookId, setSelectedFamilyBookId] = useState<string | undefined>()
+  
   const handleMarkReturned = ({ book, loan }: { book: CatalogBook; loan: BookLoanSummary }) => {
+    // Get the family book ID from the book's owned copies
+    const familyBookId = book.viewerContext?.ownedCopies?.[0]?.familyBookId
+    setSelectedFamilyBookId(familyBookId)
+    
     const dialogLoan: ReturnDialogLoan = {
       id: loan.id,
       borrower_family: loan.borrowerFamily
@@ -292,6 +298,7 @@ export default function MyBooks() {
           open={returnDialogOpen}
           onClose={handleReturnDialogClose}
           loan={selectedLoan}
+          familyBookId={selectedFamilyBookId}
           onSuccess={handleReturnSuccess}
         />
       )}

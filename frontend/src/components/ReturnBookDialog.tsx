@@ -11,7 +11,7 @@ import {
   Box,
   Typography
 } from '@mui/material';
-import { apiCall } from '../utils/apiCall';
+import { useUpdateLoan } from '../hooks/useLoanMutations';
 
 interface Loan {
   id: string;
@@ -38,6 +38,7 @@ interface ReturnBookDialogProps {
   open: boolean;
   onClose: () => void;
   loan: Loan;
+  familyBookId?: string;
   onSuccess: () => void;
 }
 
@@ -45,14 +46,24 @@ export default function ReturnBookDialog({
   open,
   onClose,
   loan,
+  familyBookId,
   onSuccess
 }: ReturnBookDialogProps) {
   const [returnDate, setReturnDate] = useState(
     new Date().toISOString().split('T')[0]
   );
   const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  const updateLoan = useUpdateLoan(loan.id, familyBookId, {
+    onSuccess: () => {
+      onSuccess();
+      handleClose();
+    },
+    onError: (err) => {
+      setError(err.message || 'שגיאה בסימון ההחזרה');
+    },
+  });
 
   // Get book info from either structure
   const bookInfo = loan.family_books?.book_catalog || loan.books;
@@ -61,27 +72,11 @@ export default function ReturnBookDialog({
   const borrowerName = loan.borrower_family?.name || 'משפחה';
 
   const handleSubmit = async () => {
-    setLoading(true);
     setError('');
-
-    try {
-      await apiCall(`/api/loans/${loan.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          status: 'returned',
-          return_date: returnDate,
-          notes: notes || null
-        }),
-      });
-
-      onSuccess();
-      handleClose();
-    } catch (err: any) {
-      console.error('Error returning book:', err);
-      setError(err.message || 'שגיאה בסימון ההחזרה');
-    } finally {
-      setLoading(false);
-    }
+    updateLoan.mutate({
+      status: 'returned',
+      return_date: returnDate,
+    });
   };
 
   const handleClose = () => {
@@ -114,7 +109,7 @@ export default function ReturnBookDialog({
             type="date"
             value={returnDate}
             onChange={(e) => setReturnDate(e.target.value)}
-            disabled={loading}
+            disabled={updateLoan.isPending}
             sx={{ mb: 3 }}
             InputLabelProps={{
               shrink: true,
@@ -129,7 +124,7 @@ export default function ReturnBookDialog({
             rows={3}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            disabled={loading}
+            disabled={updateLoan.isPending}
             placeholder="הערות על מצב הספר בעת החזרה"
           />
 
@@ -141,14 +136,14 @@ export default function ReturnBookDialog({
         </Box>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}>
-        <Button onClick={handleClose} disabled={loading}>
+        <Button onClick={handleClose} disabled={updateLoan.isPending}>
           ביטול
         </Button>
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={loading}
-          startIcon={loading ? <CircularProgress size={20} /> : null}
+          disabled={updateLoan.isPending}
+          startIcon={updateLoan.isPending ? <CircularProgress size={20} /> : null}
         >
           אשר החזרה
         </Button>

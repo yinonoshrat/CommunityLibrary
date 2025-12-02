@@ -65,19 +65,13 @@ function updateNormalizedCache(
 ) {
   const cache = getNormalizedCache(queryClient);
   
-  console.log('[updateNormalizedCache] Updating cache with', books.length, 'books');
-  
   // Update byId with new/updated books
   books.forEach(book => {
-    console.log('[updateNormalizedCache] Adding book:', book.catalogId, book.title || book.titleHebrew);
     cache.byId[book.catalogId] = book;
   });
   
   // Track which books belong to this query
   cache.queriesData[queryKey] = books.map(b => b.catalogId);
-  
-  console.log('[updateNormalizedCache] Cache now has', Object.keys(cache.byId).length, 'books');
-  console.log('[updateNormalizedCache] Book IDs:', Object.keys(cache.byId));
   
   queryClient.setQueryData(queryKeys.books.normalized(), cache);
 }
@@ -113,35 +107,19 @@ export function useBooks(
   return useQuery({
     queryKey: queryKeys.books.list(filters),
     queryFn: async () => {
-      console.log('[useBooks] Fetching from server with filters:', filters);
-      
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== undefined && value !== '') {
           params.append(key, String(value));
         }
       });
-      
+
       const response = await apiCall<BooksResponse>(`/api/books?${params.toString()}`);
-      
-      console.log('[useBooks] Got response with', response.books.length, 'books');
       
       // Update normalized cache
       updateNormalizedCache(queryClient, response.books, queryKey);
       
-      console.log('[useBooks] Updated normalized cache');
-      
       return response;
-    },
-    // Try to get from normalized cache first
-    placeholderData: () => {
-      const books = getBooksFromCache(queryClient, queryKey);
-      if (books) {
-        console.log('[useBooks] Returning', books.length, 'books from normalized cache');
-      } else {
-        console.log('[useBooks] No data in normalized cache for this query');
-      }
-      return books ? { books } : undefined;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     ...options,
