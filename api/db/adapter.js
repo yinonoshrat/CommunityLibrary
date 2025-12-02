@@ -746,6 +746,7 @@ export const db = {
         .eq('user_id', userId)
         .single()
 
+      let liked;
       if (existing) {
         // Unlike
         const { error } = await supabase
@@ -754,7 +755,7 @@ export const db = {
           .eq('book_catalog_id', catalogId)
           .eq('user_id', userId)
         if (error) throw error
-        return { liked: false }
+        liked = false;
       } else {
         // Like
         const { data, error } = await supabase
@@ -763,8 +764,18 @@ export const db = {
           .select()
           .single()
         if (error) throw error
-        return { liked: true, data }
+        liked = true;
       }
+
+      // Get total count after toggle
+      const { count, error: countError } = await supabase
+        .from('likes')
+        .select('id', { count: 'exact', head: true })
+        .eq('book_catalog_id', catalogId);
+
+      if (countError) throw countError;
+
+      return { liked, count: count || 0 };
     }
   }
 }

@@ -22,6 +22,7 @@ export const queryKeys = {
   // Book queries
   books: {
     all: ['books'] as const,
+    normalized: () => ['books', 'normalized'] as const, // Single normalized cache
     lists: () => ['books', 'list'] as const,
     list: (filters: Record<string, any>) => ['books', 'list', filters] as const,
     details: () => ['books', 'detail'] as const,

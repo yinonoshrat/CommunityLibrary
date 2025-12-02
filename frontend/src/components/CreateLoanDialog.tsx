@@ -49,8 +49,17 @@ export default function CreateLoanDialog({
   // Filter out current user's family
   const families = useMemo(() => {
     if (!familiesData) return [];
-    return familiesData.filter((f) => String(f.family_id) !== userFamilyId);
+    return familiesData.filter((f) => String(f.id) !== userFamilyId);
   }, [familiesData, userFamilyId]);
+
+  // Find duplicate family names
+  const duplicateFamilyNames = useMemo(() => {
+    const nameCounts = (familiesData || []).reduce((acc, family) => {
+      acc[family.name] = (acc[family.name] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    return new Set(Object.keys(nameCounts).filter(name => nameCounts[name] > 1));
+  }, [familiesData]);
 
   // Use mutation hook for creating loan
   const createLoan = useCreateLoan({
@@ -110,8 +119,13 @@ export default function CreateLoanDialog({
                 <em>בחר משפחה</em>
               </MenuItem>
               {families.map((family) => (
-                <MenuItem key={family.family_id} value={String(family.family_id)}>
-                  {family.family_name}
+                <MenuItem key={family.id} value={String(family.id)}>
+                  {family.name}
+                  {duplicateFamilyNames.has(family.name) && family.members && family.members.length > 0 && (
+                    <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
+                      ({family.members.map((m: any) => m.full_name).join(', ')})
+                    </Typography>
+                  )}
                 </MenuItem>
               ))}
             </Select>

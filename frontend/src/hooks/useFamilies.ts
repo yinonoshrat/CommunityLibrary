@@ -3,21 +3,22 @@ import { apiCall } from '../utils/apiCall';
 import { queryKeys } from './queryKeys';
 
 // Types for family operations
-export interface Family {
-  family_id: number;
-  family_name: string;
-  created_at: string;
-}
-
 export interface FamilyMember {
-  user_id: number;
-  name: string;
-  email: string;
+  id: number;
+  full_name: string;
+  email?: string;
   role?: string;
 }
 
+export interface Family {
+  id: number;
+  name: string;
+  created_at: string;
+  members?: FamilyMember[]; // Optional members array
+}
+
 export interface FamilyWithMembers extends Family {
-  members: FamilyMember[];
+  members: FamilyMember[]; // Required members array
 }
 
 /**

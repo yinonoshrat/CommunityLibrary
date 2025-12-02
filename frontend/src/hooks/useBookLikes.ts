@@ -41,8 +41,7 @@ export function useBookLikes(
 
 /**
  * Hook to toggle like on a book (like or unlike)
- * Uses optimistic updates for instant UI feedback
- * Invalidates books queries to update embedded like data
+ * Updates the normalized book cache so all queries see the change
  */
 export function useToggleBookLike(
   bookId: string,
@@ -50,9 +49,16 @@ export function useToggleBookLike(
   options?: Omit<UseMutationOptions<ToggleLikeResponse, Error, void>, 'mutationFn'>
 ) {
   const queryClient = useQueryClient();
+  
+  // Save the user's callbacks
+  const userOnSuccess = options?.onSuccess;
+  const userOnError = options?.onError;
 
   return useMutation<ToggleLikeResponse, Error, void>({
+    ...options,
     mutationFn: async () => {
+      console.log('[useToggleBookLike] Mutation called for bookId:', bookId);
+      
       const response = await apiCall(`/api/books/${bookId}/likes`, {
         method: 'POST',
         headers: {
@@ -63,229 +69,87 @@ export function useToggleBookLike(
         }),
       });
 
+      console.log('[useToggleBookLike] API response:', response);
       return response;
     },
-    // Optimistic update - update book stats directly in ALL cached books queries
-    onMutate: async () => {
-      // Cancel any outgoing refetches for books
-      await queryClient.cancelQueries({ queryKey: queryKeys.books.all });
-      
-      // Also cancel the specific book detail query
-      await queryClient.cancelQueries({ queryKey: queryKeys.books.detail(bookId) });
-
-      // Snapshot all books queries
-      const previousQueries = queryClient.getQueriesData<any>({ queryKey: queryKeys.books.all });
-      const previousBookDetail = queryClient.getQueryData(queryKeys.books.detail(bookId));
-
-      // Optimistically update all books queries that contain this book
-      queryClient.setQueriesData({ queryKey: queryKeys.books.all }, (oldData: any) => {
-        if (!oldData || !userId) return oldData;
-
-        // Handle BooksResponse with books array
-        if (oldData.books && Array.isArray(oldData.books)) {
-          return {
-            ...oldData,
-            books: oldData.books.map((book: any) => {
-              if (book.catalogId === bookId) {
-                const currentLiked = book.stats?.userLiked || false;
-                return {
-                  ...book,
-                  stats: {
-                    ...book.stats,
-                    totalLikes: currentLiked
-                      ? Math.max(0, (book.stats?.totalLikes || 0) - 1)
-                      : (book.stats?.totalLikes || 0) + 1,
-                    userLiked: !currentLiked,
-                  },
-                };
-              }
-              return book;
-            }),
+    // Merge onSuccess callbacks
+    onSuccess: async (data, variables, context) => {
+      try {
+        console.log('[useToggleBookLike] onSuccess called!');
+        console.log('[useToggleBookLike] Server response:', data);
+        console.log('[useToggleBookLike] Updating normalized cache for bookId:', bookId);
+        
+        // Get normalized cache
+        const normalizedCacheKey = ['books', 'normalized'];
+        const cache = queryClient.getQueryData<any>(normalizedCacheKey);
+        
+        console.log('[useToggleBookLike] Current normalized cache:', cache);
+        
+        if (cache && cache.byId && cache.byId[bookId]) {
+          console.log('[useToggleBookLike] Found book in cache, current stats:', cache.byId[bookId].stats);
+          
+          // Update the book in normalized cache
+          const updatedBook = {
+            ...cache.byId[bookId],
+            stats: {
+              ...cache.byId[bookId].stats,
+              totalLikes: data.count,
+              userLiked: data.liked,
+            },
           };
-        }
-
-        // Handle array of books directly
-        if (Array.isArray(oldData)) {
-          return oldData.map((book) => {
-            if (book.catalogId === bookId) {
-              const currentLiked = book.stats?.userLiked || false;
+          
+          cache.byId[bookId] = updatedBook;
+          queryClient.setQueryData(normalizedCacheKey, cache);
+          
+          console.log('[useToggleBookLike] Updated book in normalized cache, new stats:', updatedBook.stats);
+          
+          // Invalidate all book list queries so they re-fetch from normalized cache
+          console.log('[useToggleBookLike] Invalidating book list queries');
+          queryClient.invalidateQueries({ queryKey: ['books', 'list'] });
+          
+          // Also update the specific book detail query if it exists
+          const detailKey = ['books', 'detail', bookId];
+          const oldDetail = queryClient.getQueryData(detailKey);
+          console.log('[useToggleBookLike] Book detail query exists:', !!oldDetail);
+          
+          queryClient.setQueryData(detailKey, (oldData: any) => {
+            if (!oldData) return oldData;
+            
+            if (oldData.book) {
+              console.log('[useToggleBookLike] Updated book detail query');
               return {
-                ...book,
-                stats: {
-                  ...book.stats,
-                  totalLikes: currentLiked
-                    ? Math.max(0, (book.stats?.totalLikes || 0) - 1)
-                    : (book.stats?.totalLikes || 0) + 1,
-                  userLiked: !currentLiked,
-                },
+                ...oldData,
+                book: updatedBook,
               };
             }
-            return book;
+            
+            return oldData;
+          });
+        } else {
+          console.warn('[useToggleBookLike] Book not found in normalized cache. Cache state:', {
+            cacheExists: !!cache,
+            hasById: !!(cache && cache.byId),
+            bookIds: cache && cache.byId ? Object.keys(cache.byId) : [],
+            lookingFor: bookId
           });
         }
-
-        // Handle BookResponse with single book (from /api/books/:id)
-        if (oldData.book && oldData.book.catalogId === bookId) {
-          const currentLiked = oldData.book.stats?.userLiked || false;
-          return {
-            ...oldData,
-            book: {
-              ...oldData.book,
-              stats: {
-                ...oldData.book.stats,
-                totalLikes: currentLiked
-                  ? Math.max(0, (oldData.book.stats?.totalLikes || 0) - 1)
-                  : (oldData.book.stats?.totalLikes || 0) + 1,
-                userLiked: !currentLiked,
-              },
-            },
-          };
-        }
-
-        return oldData;
-      });
-
-      // Also update the specific book detail query cache
-      queryClient.setQueryData(queryKeys.books.detail(bookId), (oldData: any) => {
-        if (!oldData || !userId) return oldData;
-
-        // Handle BookResponse format
-        if (oldData.book && oldData.book.catalogId === bookId) {
-          const currentLiked = oldData.book.stats?.userLiked || false;
-          return {
-            ...oldData,
-            book: {
-              ...oldData.book,
-              stats: {
-                ...oldData.book.stats,
-                totalLikes: currentLiked
-                  ? Math.max(0, (oldData.book.stats?.totalLikes || 0) - 1)
-                  : (oldData.book.stats?.totalLikes || 0) + 1,
-                userLiked: !currentLiked,
-              },
-            },
-          };
-        }
-
-        return oldData;
-      });
-
-      // Return context with snapshot values for rollback on error only
-      return { previousQueries, previousBookDetail };
-    },
-    // On error, roll back to previous values
-    onError: (_err: Error, _variables: void, context: unknown) => {
-      const ctx = context as { previousQueries?: [any, any][]; previousBookDetail?: any };
-      if (ctx?.previousQueries) {
-        ctx.previousQueries.forEach(([queryKey, data]: [any, any]) => {
-          queryClient.setQueryData(queryKey, data);
-        });
+      } catch (error) {
+        console.error('[useToggleBookLike] Error in onSuccess:', error);
+        throw error;
       }
-      if (ctx?.previousBookDetail !== undefined) {
-        queryClient.setQueryData(queryKeys.books.detail(bookId), ctx.previousBookDetail);
+      
+      // Call user's onSuccess callback if provided
+      if (userOnSuccess) {
+        await (userOnSuccess as any)(data, variables, context);
       }
     },
-    // On success, update cache with server response to ensure consistency
-    onSuccess: (data) => {
-      console.log('[useToggleBookLike] Server response:', data);
-      console.log('[useToggleBookLike] Updating all book caches for bookId:', bookId);
+    // Merge onError callbacks  
+    onError: async (error, variables, context) => {
+      console.error('[useToggleBookLike] Error:', error);
       
-      // Get all book queries to see what's in cache
-      const allBookQueries = queryClient.getQueriesData({ queryKey: queryKeys.books.all });
-      console.log('[useToggleBookLike] Found book queries in cache:', allBookQueries.length);
-      
-      // Update all books queries with the actual server data
-      queryClient.setQueriesData({ queryKey: queryKeys.books.all }, (oldData: any) => {
-        if (!oldData) return oldData;
-
-        // Handle BooksResponse with books array
-        if (oldData.books && Array.isArray(oldData.books)) {
-          const bookFound = oldData.books.some((book: any) => book.catalogId === bookId);
-          console.log('[useToggleBookLike] Updating BooksResponse, book found:', bookFound);
-          
-          return {
-            ...oldData,
-            books: oldData.books.map((book: any) => {
-              if (book.catalogId === bookId) {
-                return {
-                  ...book,
-                  stats: {
-                    ...book.stats,
-                    totalLikes: data.count,
-                    userLiked: data.liked,
-                  },
-                };
-              }
-              return book;
-            }),
-          };
-        }
-
-        // Handle array of books directly
-        if (Array.isArray(oldData)) {
-          const bookFound = oldData.some((book) => book.catalogId === bookId);
-          console.log('[useToggleBookLike] Updating books array, book found:', bookFound);
-          
-          return oldData.map((book) => {
-            if (book.catalogId === bookId) {
-              return {
-                ...book,
-                stats: {
-                  ...book.stats,
-                  totalLikes: data.count,
-                  userLiked: data.liked,
-                },
-              };
-            }
-            return book;
-          });
-        }
-
-        // Handle BookResponse with single book
-        if (oldData.book && oldData.book.catalogId === bookId) {
-          console.log('[useToggleBookLike] Updating BookResponse');
-          
-          return {
-            ...oldData,
-            book: {
-              ...oldData.book,
-              stats: {
-                ...oldData.book.stats,
-                totalLikes: data.count,
-                userLiked: data.liked,
-              },
-            },
-          };
-        }
-
-        return oldData;
-      });
-
-      // Also update the specific book detail query
-      queryClient.setQueryData(queryKeys.books.detail(bookId), (oldData: any) => {
-        if (!oldData) return oldData;
-
-        if (oldData.book && oldData.book.catalogId === bookId) {
-          console.log('[useToggleBookLike] Updated book detail cache');
-          
-          return {
-            ...oldData,
-            book: {
-              ...oldData.book,
-              stats: {
-                ...oldData.book.stats,
-                totalLikes: data.count,
-                userLiked: data.liked,
-              },
-            },
-          };
-        }
-
-        return oldData;
-      });
-      
-      console.log('[useToggleBookLike] Cache update complete');
+      if (userOnError) {
+        await (userOnError as any)(error, variables, context);
+      }
     },
-    ...options,
   });
 }
