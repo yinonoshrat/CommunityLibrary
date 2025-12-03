@@ -11,7 +11,6 @@ import authRouter from './routes/auth.routes.js';
 import familiesRouter from './routes/families.routes.js';
 import usersRouter from './routes/users.routes.js';
 import loansRouter from './routes/loans.routes.js';
-import genreMappingsRouter from './routes/genreMappings.routes.js';
 import systemRouter from './routes/system.routes.js';
 import searchRouter from './routes/search.routes.js';
 import reviewsRouter from './routes/reviews.routes.js';
@@ -141,9 +140,6 @@ app.use('/api/users', usersRouter);
 
 // Mount loans router (handles all /api/loans routes)
 app.use('/api/loans', loansRouter);
-
-// Mount genre mappings router (handles all /api/genre-mappings routes)
-app.use('/api/genre-mappings', genreMappingsRouter);
 
 // Mount reviews router
 app.use('/api/reviews', reviewsRouter);
