@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { Virtuoso } from 'react-virtuoso'
 import {
   Container,
   Typography,
@@ -97,6 +98,16 @@ export default function MyBooks() {
   
   const books = useMemo(() => booksResponse?.books || [], [booksResponse?.books]);
   const error = booksError ? (booksError as Error).message : '';
+
+  // Group books into rows for responsive grid (3 per row on desktop, 2 on tablet, 1 on mobile)
+  const ITEMS_PER_ROW = 3;
+  const bookRows = useMemo(() => {
+    const rows = [];
+    for (let i = 0; i < books.length; i += ITEMS_PER_ROW) {
+      rows.push(books.slice(i, i + ITEMS_PER_ROW));
+    }
+    return rows;
+  }, [books]);
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -301,18 +312,24 @@ export default function MyBooks() {
           </Typography>
         </Box>
       ) : (
-        <Grid container spacing={3}>
-          {books.map((book) => (
-            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={book.id}>
-              <CatalogBookCard 
-                book={book} 
-                onMarkReturned={handleMarkReturned}
-                onLoanSuccess={handleLoanCreated}
-                onCreateLoan={handleOpenLoanDialog}
-              />
+        <Virtuoso
+          useWindowScroll
+          totalCount={bookRows.length}
+          itemContent={(rowIndex) => (
+            <Grid container spacing={3} sx={{ mb: 3 }}>
+              {bookRows[rowIndex].map((book) => (
+                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={book.id}>
+                  <CatalogBookCard 
+                    book={book} 
+                    onMarkReturned={handleMarkReturned}
+                    onLoanSuccess={handleLoanCreated}
+                    onCreateLoan={handleOpenLoanDialog}
+                  />
+                </Grid>
+              ))}
             </Grid>
-          ))}
-        </Grid>
+          )}
+        />
       )}
 
       {/* Shared CreateLoanDialog - only rendered when needed */}
