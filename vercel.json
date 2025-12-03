@@ -1,31 +1,25 @@
 {
+  "version": 2,
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
-  "functions": {
-    "api/index.js": {
-      "memory": 1024,
-      "maxDuration": 10,
-      "includeFiles": "api/**"
-    }
-  },
-  "rewrites": [
+  "builds": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/index.js"
+      "src": "api/index.js",
+      "use": "@vercel/node"
     },
     {
-      "source": "/((?!api).*)",
-      "destination": "/index.html"
+      "src": "frontend/dist/**",
+      "use": "@vercel/static"
     }
   ],
-  "github": {
-    "silent": false
-  },
-  "git": {
-    "deploymentEnabled": {
-      "main": true,
-      "production": true
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/frontend/dist/$1"
     }
-  },
-  "alias": ["dev.communitylibrary.com"]
+  ]
 }

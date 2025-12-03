@@ -1,25 +1,19 @@
-# Test files
-api/__tests__/
-api/**/*.test.js
-api/vitest.config.js
+# Test files and test configuration
+__tests__/
+*.test.js
+vitest.config.js
 
-# Utility scripts (not serverless functions)
-api/check-policies.js
-api/verify-rls.js
-api/test-register-flow.js
+# Development and documentation files
+*.md
+!README.md
+books-test-output.txt
+REFACTORING_*.md
 
-# Development files
-api/books-test-output.txt
-api/REFACTORING_*.md
+# Local environment files
+.env*.local
 
-# Node modules (built on Vercel)
-node_modules/
-
-# Build outputs (frontend built by Vercel)
+# Build artifacts
 frontend/dist/
 frontend/.vite/
-
-# Local env files
-.env*.local
 
 
