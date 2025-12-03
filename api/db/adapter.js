@@ -71,6 +71,36 @@ export const db = {
       return data
     },
 
+    getAllWithMembers: async () => {
+      const t1 = Date.now();
+      
+      // Single query that joins families with their members
+      // This replaces 190+ separate queries with 1 efficient query
+      const { data, error } = await supabase
+        .from('families')
+        .select(`
+          *,
+          users!family_id (
+            id,
+            full_name
+          )
+        `)
+        .order('name');
+      
+      const duration = Date.now() - t1;
+      if (duration > 500) {
+        console.warn(`⚠️  DB families.getAllWithMembers SLOW: ${duration}ms for ${data?.length || 0} families`);
+      }
+      
+      if (error) throw error;
+      
+      // Transform the nested structure to match expected format
+      return data.map(family => ({
+        ...family,
+        members: family.users || []
+      })).map(({ users, ...family }) => family); // Remove users property, keep members
+    },
+
     getById: async (id) => {
       const { data, error } = await supabase
         .from('families')
@@ -264,11 +294,20 @@ export const db = {
     },
 
     getById: async (id) => {
+      const t1 = Date.now();
       const { data, error } = await supabase
         .from('books_view')
         .select('*, families(name, phone, whatsapp, email)')
         .eq('id', id)
         .single()
+      const duration = Date.now() - t1;
+      
+      if (duration > 1000) {
+        console.warn(`⚠️  DB books.getById VERY SLOW: ${duration}ms for id=${id}`);
+      } else if (duration > 500) {
+        console.warn(`⚠️  DB books.getById SLOW: ${duration}ms for id=${id}`);
+      }
+      
       if (error) throw error
       return data
     },
@@ -604,34 +643,54 @@ export const db = {
   // Reviews operations
   reviews: {
     getByBookId: async (bookId) => {
-      // bookId here is actually the book_catalog_id from books_view
-      // We need to get the book_catalog_id from the family_books record
+      const t1 = Date.now();
+      
+      // First, try treating it as a catalog_id directly (most common case)
+      const { data: directResults, error: directError } = await supabase
+        .from('reviews')
+        .select('*, users(full_name)')
+        .eq('book_catalog_id', bookId)
+        .order('created_at', { ascending: false });
+      
+      // If we got results, return them
+      if (!directError && directResults && directResults.length > 0) {
+        const duration = Date.now() - t1;
+        if (duration > 500) {
+          console.warn(`⚠️  DB reviews.getByBookId SLOW: ${duration}ms (direct catalog, ${directResults.length} reviews)`);
+        }
+        return directResults;
+      }
+      
+      // Otherwise, look up via family_books
       const { data: familyBook, error: fbError } = await supabase
         .from('family_books')
         .select('book_catalog_id')
         .eq('id', bookId)
-        .single()
-
-      if (fbError) {
-        // If the ID is not a family_books ID, assume it's already a catalog ID
-        // This handles direct catalog ID queries
-        const { data, error } = await supabase
-          .from('reviews')
-          .select('*, users(full_name)')
-          .eq('book_catalog_id', bookId)
-          .order('created_at', { ascending: false })
-        if (error) throw error
-        return data
+        .maybeSingle();
+      
+      if (fbError || !familyBook) {
+        const duration = Date.now() - t1;
+        if (duration > 500) {
+          console.warn(`⚠️  DB reviews.getByBookId SLOW: ${duration}ms (not found)`);
+        }
+        // Return empty array instead of throwing - book has no reviews
+        return directResults || [];
       }
-
-      // Query reviews for the catalog book
+      
+      // Query reviews using catalog_id from family_book
       const { data, error } = await supabase
         .from('reviews')
         .select('*, users(full_name)')
         .eq('book_catalog_id', familyBook.book_catalog_id)
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      return data
+        .order('created_at', { ascending: false });
+      
+      const duration = Date.now() - t1;
+      if (duration > 500) {
+        console.warn(`⚠️  DB reviews.getByBookId SLOW: ${duration}ms (via family_book, ${data?.length || 0} reviews)`);
+      }
+      
+      if (error) throw error;
+      return data || [];
     },
 
     create: async (review) => {

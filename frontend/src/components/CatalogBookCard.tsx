@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo } from 'react'
 import {
   Card,
   CardActionArea,
@@ -21,7 +21,6 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useUser } from '../hooks/useUser'
 import LikeButton from './LikeButton'
-import CreateLoanDialog from './CreateLoanDialog'
 import type { CatalogBook, BookLoanSummary } from '../types'
 
 interface CatalogBookCardProps {
@@ -47,13 +46,12 @@ const getPrimaryFamilyBookId = (book: CatalogBook) => {
   return book.owners[0]?.familyBookId
 }
 
-function CatalogBookCard({ book, onMarkReturned, onLoanSuccess, onCreateLoan }: CatalogBookCardProps) {
+function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, onCreateLoan }: CatalogBookCardProps) {
   const navigate = useNavigate()
   const { user } = useAuth()
   
   // Use reactive hook for user data - automatic caching
-  const { data: userResponse } = useUser(user?.id)
-  const userFamilyId = userResponse?.user?.family_id || ''
+  const { data: _userResponse } = useUser(user?.id)
   
   const primaryFamilyBookId = useMemo(() => getPrimaryFamilyBookId(book), [book])
   const viewerLoan = book.viewerContext.borrowedLoan
@@ -70,12 +68,12 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess, onCreateLoan }: 
     onMarkReturned({ book, loan: viewerOwnedCopy.loan })
   }
 
-  const handleLoanSuccess = (loan?: any) => {
-    // Trigger parent to update book status with loan data
-    if (onLoanSuccess && loan && book.catalogId) {
-      onLoanSuccess(book.catalogId, loan)
-    }
-  }
+  // const handleLoanSuccess = (loan?: any) => {
+  //   // Trigger parent to update book status with loan data
+  //   if (onLoanSuccess && loan && book.catalogId) {
+  //     onLoanSuccess(book.catalogId, loan)
+  //   }
+  // }
 
   const handleCreateLoan = () => {
     if (onCreateLoan) {

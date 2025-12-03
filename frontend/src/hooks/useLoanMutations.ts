@@ -159,14 +159,14 @@ export function useCreateLoan(
       
       return { previousCache };
     },
-    onError: (err, variables, context) => {
+    onError: (_err, _variables, context) => {
       // Rollback on error
-      if (context?.previousCache) {
+      if (context && typeof context === 'object' && 'previousCache' in context && context.previousCache) {
         queryClient.setQueryData(['books', 'normalized'], context.previousCache);
         queryClient.invalidateQueries({ queryKey: queryKeys.books.lists() });
       }
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       // Refetch books to replace optimistic update with real data
       queryClient.invalidateQueries({ queryKey: queryKeys.books.lists() });
       
@@ -288,31 +288,21 @@ export function useUpdateLoan(
       
       return { previousCache };
     },
-    onError: (err, variables, context) => {
+    onError: (_err, _variables, context) => {
       // Rollback on error
-      if (context?.previousCache) {
+      if (context && typeof context === 'object' && 'previousCache' in context && context.previousCache) {
         queryClient.setQueryData(['books', 'normalized'], context.previousCache);
         queryClient.invalidateQueries({ queryKey: queryKeys.books.lists() });
       }
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       // Invalidate loan-specific queries only
       // Don't invalidate book queries - optimistic update already handles that
       // Books will refresh naturally after staleTime (5 minutes) or manual refresh
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all });
       
-      // Invalidate the specific book's loan queries
-      if (data.family_book_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byBook(String(data.family_book_id)) });
-      }
-      
-      // Invalidate owner and borrower family loan queries
-      if (data.owner_family_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byOwner(String(data.owner_family_id)) });
-      }
-      if (data.borrower_family_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byBorrower(String(data.borrower_family_id)) });
-      }
+      // Note: We don't have access to specific loan data here anymore
+      // so we just invalidate all loan queries which will refresh as needed
     },
     ...options,
   });

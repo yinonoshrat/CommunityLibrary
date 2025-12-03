@@ -87,6 +87,42 @@ const upload = multer({
 app.use(cors());
 app.use(express.json());
 
+// Cache control for GET requests
+app.use((req, res, next) => {
+  if (req.method === 'GET') {
+    // Cache books list for 30 seconds
+    if (req.path.startsWith('/api/books') && !req.path.includes('/reviews') && !req.path.includes('/likes')) {
+      res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+    }
+    // Cache reviews for 60 seconds
+    else if (req.path.includes('/reviews')) {
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+    }
+  }
+  next();
+});
+
+// Performance monitoring middleware
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  const originalSend = res.send;
+  
+  res.send = function(data) {
+    const duration = Date.now() - startTime;
+    
+    // Log slow requests (> 500ms)
+    if (duration > 500) {
+      console.warn(`⚠️  SLOW REQUEST: ${req.method} ${req.path} took ${duration}ms`);
+    } else if (duration > 200) {
+      console.log(`⏱️  ${req.method} ${req.path} took ${duration}ms`);
+    }
+    
+    originalSend.call(this, data);
+  };
+  
+  next();
+});
+
 // Middleware to extract user context (supports Bearer token + x-user-id for tests)
 app.use(extractUserFromToken);
 

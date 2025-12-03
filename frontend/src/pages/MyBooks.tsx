@@ -318,7 +318,7 @@ export default function MyBooks() {
           itemContent={(rowIndex) => (
             <Grid container spacing={3} sx={{ mb: 3 }}>
               {bookRows[rowIndex].map((book) => (
-                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={book.id}>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={book.catalogId}>
                   <CatalogBookCard 
                     book={book} 
                     onMarkReturned={handleMarkReturned}

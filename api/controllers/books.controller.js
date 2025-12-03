@@ -214,6 +214,9 @@ function groupBooksForResponse({ books, loanMap, likesMap, userLikesSet, viewerF
  * @route GET /api/books
  */
 export const getAllBooks = asyncHandler(async (req, res) => {
+  const perfStart = Date.now();
+  const timings = {};
+  
   const {
     familyId: familyIdQuery,
     view: viewQuery,
@@ -237,6 +240,7 @@ export const getAllBooks = asyncHandler(async (req, res) => {
   const familyIdHeader = req.familyId;
   const view = (viewQuery || scopeQuery || (familyIdQuery ? 'my' : 'all') || 'my').toString();
 
+  let t1 = Date.now();
   let viewerFamilyId = familyIdQuery || familyIdHeader || null;
   if (!viewerFamilyId && userId) {
     try {
@@ -246,6 +250,7 @@ export const getAllBooks = asyncHandler(async (req, res) => {
       console.warn('Unable to resolve viewer family:', err.message);
     }
   }
+  timings.getUserFamily = Date.now() - t1;
 
   if ((view === 'my' || view === 'borrowed') && !viewerFamilyId) {
     return res.json({
@@ -284,7 +289,9 @@ export const getAllBooks = asyncHandler(async (req, res) => {
   if (view === 'my') {
     filters.familyId = viewerFamilyId;
   } else if (view === 'borrowed') {
+    t1 = Date.now();
     const borrowedLoans = await db.loans.getAll({ borrowerFamilyId: viewerFamilyId, status: 'active' });
+    timings.getBorrowedLoans = Date.now() - t1;
     if (!borrowedLoans.length) {
       return res.json({ books: [], meta: { total: 0, view } });
     }
@@ -303,8 +310,11 @@ export const getAllBooks = asyncHandler(async (req, res) => {
     filters.limit = 100;
   }
 
+  t1 = Date.now();
   const books = await db.books.getAll(filters);
+  timings.getBooksQuery = Date.now() - t1;
 
+  t1 = Date.now();
   const missingLoanIds = books.map((book) => book.id).filter((id) => id && !loanMap.has(id));
 
   if (missingLoanIds.length) {
@@ -317,18 +327,17 @@ export const getAllBooks = asyncHandler(async (req, res) => {
   }
 
   // Fetch likes count and user's like status for all catalog IDs in parallel
+  t1 = Date.now();
   const catalogIds = [...new Set(books.map((b) => b.book_catalog_id).filter(Boolean))];
   const likesMap = new Map();
   const userLikesSet = new Set();
   
   if (catalogIds.length > 0) {
+    // Use RPC call for efficient aggregated likes count
     const likesPromises = [
-      // Count all likes per book
-      supabase
-        .from('likes')
-        .select('book_catalog_id')
-        .in('book_catalog_id', catalogIds),
-      // Check if current user liked each book (if user is authenticated)
+      // Get counts grouped by book_catalog_id (much faster than fetching all rows)
+      supabase.rpc('get_likes_counts', { catalog_ids: catalogIds }),
+      // Check if current user liked each book (only fetch user's likes)
       userId
         ? supabase
             .from('likes')
@@ -338,11 +347,25 @@ export const getAllBooks = asyncHandler(async (req, res) => {
         : Promise.resolve({ data: [] }),
     ];
 
-    const [likesResult, userLikesResult] = await Promise.all(likesPromises);
+    const [likesCountResult, userLikesResult] = await Promise.all(likesPromises);
 
-    if (likesResult.data) {
-      for (const like of likesResult.data) {
-        likesMap.set(like.book_catalog_id, (likesMap.get(like.book_catalog_id) || 0) + 1);
+    // If RPC doesn't exist yet, fall back to old method
+    if (likesCountResult.error && likesCountResult.error.code === '42883') {
+      // Function doesn't exist, use old method
+      const { data: allLikes } = await supabase
+        .from('likes')
+        .select('book_catalog_id')
+        .in('book_catalog_id', catalogIds);
+      
+      if (allLikes) {
+        for (const like of allLikes) {
+          likesMap.set(like.book_catalog_id, (likesMap.get(like.book_catalog_id) || 0) + 1);
+        }
+      }
+    } else if (likesCountResult.data) {
+      // Use the aggregated counts from RPC
+      for (const row of likesCountResult.data) {
+        likesMap.set(row.book_catalog_id, row.like_count);
       }
     }
 
@@ -352,7 +375,9 @@ export const getAllBooks = asyncHandler(async (req, res) => {
       }
     }
   }
+  timings.getLikes = Date.now() - t1;
 
+  t1 = Date.now();
   const grouped = groupBooksForResponse({
     books,
     loanMap,
@@ -362,6 +387,12 @@ export const getAllBooks = asyncHandler(async (req, res) => {
     view,
     sortBy,
   });
+  timings.groupBooks = Date.now() - t1;
+
+  const totalTime = Date.now() - perfStart;
+  if (totalTime > 500) {
+    console.warn(`⚠️  getAllBooks SLOW: ${totalTime}ms`, timings);
+  }
 
   res.json({
     books: grouped,
@@ -424,8 +455,14 @@ export const searchBooks = asyncHandler(async (req, res) => {
  * @route GET /api/books/:id
  */
 export const getBookById = asyncHandler(async (req, res) => {
+  const perfStart = Date.now();
+  const timings = {};
+  
   try {
+    const t1 = Date.now();
     const book = await db.books.getById(req.params.id);
+    timings.getBookById = Date.now() - t1;
+    
     if (!book) {
       return res.status(404).json({ error: 'Book not found' });
     }
@@ -434,30 +471,31 @@ export const getBookById = asyncHandler(async (req, res) => {
     const userId = req.query.user_id;
     
     if (book.book_catalog_id && userId) {
-      // Fetch total likes count
-      const { count: totalLikes, error: likesError } = await supabase
+      // Combine both queries into a single query for better performance
+      const t2 = Date.now();
+      const { data: likesData, error: likesError } = await supabase
         .from('likes')
-        .select('*', { count: 'exact', head: true })
+        .select('id, user_id')
         .eq('book_catalog_id', book.book_catalog_id);
+      timings.likesQuery = Date.now() - t2;
 
       if (likesError) throw likesError;
 
-      // Check if user liked this book
-      const { data: userLike, error: userLikeError } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('book_catalog_id', book.book_catalog_id)
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (userLikeError) throw userLikeError;
+      // Calculate stats from the single query result
+      const totalLikes = likesData?.length || 0;
+      const userLiked = likesData?.some(like => like.user_id === userId) || false;
 
       // Add stats to book object
       book.stats = {
         ...book.stats,
-        totalLikes: totalLikes || 0,
-        userLiked: !!userLike
+        totalLikes,
+        userLiked
       };
+    }
+
+    const totalTime = Date.now() - perfStart;
+    if (totalTime > 500) {
+      console.warn(`⚠️  getBookById SLOW: ${totalTime}ms`, timings);
     }
 
     res.json({ book });
@@ -606,8 +644,13 @@ export const deleteBook = asyncHandler(async (req, res) => {
  * @route GET /api/books/:bookId/reviews
  */
 export const getBookReviews = asyncHandler(async (req, res) => {
+  const perfStart = Date.now();
   try {
     const reviews = await db.reviews.getByBookId(req.params.bookId);
+    const duration = Date.now() - perfStart;
+    if (duration > 500) {
+      console.warn(`⚠️  getBookReviews SLOW: ${duration}ms for bookId=${req.params.bookId}`);
+    }
     res.json({ reviews });
   } catch (error) {
     console.error('Failed to fetch book reviews:', error);

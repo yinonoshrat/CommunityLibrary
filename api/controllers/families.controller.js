@@ -6,29 +6,10 @@ import { asyncHandler } from '../middleware/errorHandler.middleware.js';
  * @route GET /api/families
  */
 export const getAllFamilies = asyncHandler(async (req, res) => {
-  const families = await db.families.getAll();
-
-  // Get members for each family to help identify families with same names
-  const familiesWithMembers = await Promise.all(
-    families.map(async (family) => {
-      try {
-        const members = await db.families.getMembers(family.id);
-        return {
-          ...family,
-          members: members.map(m => ({ id: m.id, full_name: m.full_name }))
-        };
-      } catch (error) {
-        console.error(`Error getting members for family ${family.id}:`, error);
-        // Return family without members on error
-        return {
-          ...family,
-          members: []
-        };
-      }
-    })
-  );
-
-  res.json({ families: familiesWithMembers });
+  // Use optimized query that fetches families with members in single query
+  // This replaces 190+ separate queries (1 for families + 1 per family for members)
+  const families = await db.families.getAllWithMembers();
+  res.json({ families });
 });
 
 /**
@@ -61,34 +42,17 @@ export const checkFamilyName = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Family name is required' });
   }
 
-  // Find families with matching name using db adapter
-  const allFamilies = await db.families.getAll();
+  // Use optimized query to get all families with members in single query
+  const allFamilies = await db.families.getAllWithMembers();
+  
+  // Filter for matching names
   const matchingFamilies = allFamilies.filter(f =>
     f.name.toLowerCase() === name.toLowerCase()
   );
 
-  // Get members for each matching family
-  const familiesWithMembers = await Promise.all(
-    matchingFamilies.map(async (family) => {
-      try {
-        const members = await db.families.getMembers(family.id);
-        return {
-          ...family,
-          members: members.map(m => ({ id: m.id, full_name: m.full_name }))
-        };
-      } catch (err) {
-        console.error('Error getting members for family:', family.id, err);
-        return {
-          ...family,
-          members: []
-        };
-      }
-    })
-  );
-
   res.json({
-    exists: familiesWithMembers.length > 0,
-    families: familiesWithMembers
+    exists: matchingFamilies.length > 0,
+    families: matchingFamilies
   });
 });
 

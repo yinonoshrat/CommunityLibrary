@@ -61,7 +61,7 @@ export function useCreateBook(
       console.log('[useCreateBook] Received response:', response);
       return response.book;
     },
-    onSuccess: (data) => {
+    onSuccess: (_data) => {
       console.log('[useCreateBook] Success, invalidating queries');
       // Invalidate all book queries to reflect the new book
       queryClient.invalidateQueries({ queryKey: queryKeys.books.all });
