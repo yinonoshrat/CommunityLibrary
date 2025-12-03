@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   Container,
   Typography,
@@ -26,7 +26,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useBooks } from '../hooks/useBooks'
 import CatalogBookCard from '../components/CatalogBookCard'
 import ReturnBookDialog from '../components/ReturnBookDialog'
+import CreateLoanDialog from '../components/CreateLoanDialog'
 import type { CatalogBook, BookLoanSummary } from '../types'
+import { useAuth } from '../contexts/AuthContext'
+import { useUser } from '../hooks/useUser'
 
 type BookView = 'my' | 'borrowed' | 'all'
 
@@ -63,6 +66,9 @@ type ReturnDialogLoan = {
 
 export default function MyBooks() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const { data: userData } = useUser(user?.id)
+  const userFamilyId = userData?.user?.family_id
   const [searchParams, setSearchParams] = useSearchParams()
   const initialView = (searchParams.get('view') as BookView) || 'my'
   const initialStatus = searchParams.get('status') || 'all'
@@ -77,6 +83,8 @@ export default function MyBooks() {
   const [sortBy, setSortBy] = useState(initialSort)
   const [selectedLoan, setSelectedLoan] = useState<ReturnDialogLoan | null>(null)
   const [returnDialogOpen, setReturnDialogOpen] = useState(false)
+  const [loanDialogOpen, setLoanDialogOpen] = useState(false)
+  const [selectedBookForLoan, setSelectedBookForLoan] = useState<{ id: string; title: string; author: string } | null>(null)
 
   // Reactive hook - automatic caching and refetching
   const { data: booksResponse, isLoading: loading, error: booksError, refetch } = useBooks({
@@ -87,7 +95,7 @@ export default function MyBooks() {
     sortBy: sortBy !== 'title' ? sortBy : undefined,
   });
   
-  const books = booksResponse?.books || [];
+  const books = useMemo(() => booksResponse?.books || [], [booksResponse?.books]);
   const error = booksError ? (booksError as Error).message : '';
 
   useEffect(() => {
@@ -108,24 +116,24 @@ export default function MyBooks() {
     return Array.from(new Set([...GENRE_OPTIONS, ...dynamic]))
   }, [books])
 
-  const handleViewChange = (_: React.SyntheticEvent, nextView: BookView) => {
+  const handleViewChange = useCallback((_: React.SyntheticEvent, nextView: BookView) => {
     if (nextView) {
       setView(nextView)
     }
-  }
+  }, [])
 
-  const handleSearchSubmit = (event: React.FormEvent) => {
+  const handleSearchSubmit = useCallback((event: React.FormEvent) => {
     event.preventDefault()
     setSearchQuery(searchQuery.trim())
-  }
+  }, [searchQuery])
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     refetch();
-  }
+  }, [refetch])
 
   const [selectedFamilyBookId, setSelectedFamilyBookId] = useState<string | undefined>()
   
-  const handleMarkReturned = ({ book, loan }: { book: CatalogBook; loan: BookLoanSummary }) => {
+  const handleMarkReturned = useCallback(({ book, loan }: { book: CatalogBook; loan: BookLoanSummary }) => {
     // Get the family book ID from the book's owned copies
     const familyBookId = book.viewerContext?.ownedCopies?.[0]?.familyBookId
     setSelectedFamilyBookId(familyBookId)
@@ -150,17 +158,30 @@ export default function MyBooks() {
     }
     setSelectedLoan(dialogLoan)
     setReturnDialogOpen(true)
-  }
+  }, [])
 
-  const handleReturnDialogClose = () => {
+  const handleReturnDialogClose = useCallback(() => {
     setReturnDialogOpen(false)
     setSelectedLoan(null)
-  }
+  }, [])
 
-  const handleLoanCreated = () => {
+  const handleLoanCreated = useCallback(() => {
     // Auto-refetch books to get updated loan status
+    setLoanDialogOpen(false)
+    setSelectedBookForLoan(null)
+    // Force immediate refetch, bypassing cache
     refetch();
-  }
+  }, [refetch])
+
+  const handleOpenLoanDialog = useCallback((book: { id: string; title: string; author: string }) => {
+    setSelectedBookForLoan(book)
+    setLoanDialogOpen(true)
+  }, [])
+
+  const handleCloseLoanDialog = useCallback(() => {
+    setLoanDialogOpen(false)
+    setSelectedBookForLoan(null)
+  }, [])
 
   const handleReturnSuccess = () => {
     setReturnDialogOpen(false)
@@ -282,15 +303,28 @@ export default function MyBooks() {
       ) : (
         <Grid container spacing={3}>
           {books.map((book) => (
-            <Grid key={book.catalogId} size={{ xs: 12, md: 6 }}>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={book.id}>
               <CatalogBookCard 
                 book={book} 
                 onMarkReturned={handleMarkReturned}
                 onLoanSuccess={handleLoanCreated}
+                onCreateLoan={handleOpenLoanDialog}
               />
             </Grid>
           ))}
         </Grid>
+      )}
+
+      {/* Shared CreateLoanDialog - only rendered when needed */}
+      {selectedBookForLoan && userFamilyId && user?.id && (
+        <CreateLoanDialog
+          open={loanDialogOpen}
+          onClose={handleCloseLoanDialog}
+          book={selectedBookForLoan}
+          userFamilyId={userFamilyId}
+          userId={user.id}
+          onSuccess={handleLoanCreated}
+        />
       )}
 
       {selectedLoan && (

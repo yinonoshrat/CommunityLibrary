@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
   Card,
   CardActionArea,
@@ -28,6 +28,7 @@ interface CatalogBookCardProps {
   book: CatalogBook
   onMarkReturned?: (args: { book: CatalogBook; loan: BookLoanSummary }) => void
   onLoanSuccess?: (bookId: string, loan: any) => void
+  onCreateLoan?: (book: { id: string; title: string; author: string }) => void
 }
 
 const FORMATTER = new Intl.DateTimeFormat('he-IL', { dateStyle: 'medium' })
@@ -46,10 +47,9 @@ const getPrimaryFamilyBookId = (book: CatalogBook) => {
   return book.owners[0]?.familyBookId
 }
 
-export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }: CatalogBookCardProps) {
+function CatalogBookCard({ book, onMarkReturned, onLoanSuccess, onCreateLoan }: CatalogBookCardProps) {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [loanDialogOpen, setLoanDialogOpen] = useState(false)
   
   // Use reactive hook for user data - automatic caching
   const { data: userResponse } = useUser(user?.id)
@@ -71,10 +71,19 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
   }
 
   const handleLoanSuccess = (loan?: any) => {
-    setLoanDialogOpen(false)
     // Trigger parent to update book status with loan data
     if (onLoanSuccess && loan && book.catalogId) {
       onLoanSuccess(book.catalogId, loan)
+    }
+  }
+
+  const handleCreateLoan = () => {
+    if (onCreateLoan) {
+      onCreateLoan({
+        id: primaryFamilyBookId, // Use family_book_id, not catalog book id
+        title: book.titleHebrew || book.title || '',
+        author: book.authorHebrew || book.author || ''
+      })
     }
   }
 
@@ -155,7 +164,7 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
                 color="success"
                 onClick={(e) => {
                   e.stopPropagation()
-                  setLoanDialogOpen(true)
+                  handleCreateLoan()
                 }}
                 fullWidth
                 size="small"
@@ -283,21 +292,20 @@ export default function CatalogBookCard({ book, onMarkReturned, onLoanSuccess }:
         />
       </Box>
 
-      {/* Create Loan Dialog */}
-      {viewerOwnedCopy && user?.id && userFamilyId && (
-        <CreateLoanDialog
-          open={loanDialogOpen}
-          onClose={() => setLoanDialogOpen(false)}
-          book={{
-            id: viewerOwnedCopy.familyBookId,
-            title: book.title || '',
-            author: book.author || '',
-          }}
-          userFamilyId={userFamilyId}
-          userId={user.id}
-          onSuccess={handleLoanSuccess}
-        />
-      )}
     </Card>
   )
 }
+
+// Memoize to prevent unnecessary re-renders when navigating back to list
+export default React.memo(CatalogBookCard, (prevProps, nextProps) => {
+  // Only re-render if book data or callbacks actually changed
+  return (
+    prevProps.book.catalogId === nextProps.book.catalogId &&
+    prevProps.book.stats.totalLikes === nextProps.book.stats.totalLikes &&
+    prevProps.book.stats.userLiked === nextProps.book.stats.userLiked &&
+    prevProps.book.stats.availableCopies === nextProps.book.stats.availableCopies &&
+    prevProps.onMarkReturned === nextProps.onMarkReturned &&
+    prevProps.onLoanSuccess === nextProps.onLoanSuccess &&
+    prevProps.onCreateLoan === nextProps.onCreateLoan
+  )
+})

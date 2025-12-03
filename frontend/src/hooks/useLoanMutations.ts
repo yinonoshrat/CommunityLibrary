@@ -166,23 +166,24 @@ export function useCreateLoan(
         queryClient.invalidateQueries({ queryKey: queryKeys.books.lists() });
       }
     },
-    onSuccess: (data) => {
-      // Invalidate loan-specific queries only
-      // Don't invalidate book queries - optimistic update already handles that
-      // Books will refresh naturally after staleTime (5 minutes) or manual refresh
+    onSuccess: (data, variables) => {
+      // Refetch books to replace optimistic update with real data
+      queryClient.invalidateQueries({ queryKey: queryKeys.books.lists() });
+      
+      // Invalidate loan-specific queries
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all });
       
-      // Invalidate the specific book's loan queries
-      if (data.family_book_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byBook(String(data.family_book_id)) });
+      // Invalidate the specific book's loan queries using the variables
+      if (variables.family_book_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byBook(variables.family_book_id) });
       }
       
       // Invalidate owner and borrower family loan queries
-      if (data.owner_family_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byOwner(String(data.owner_family_id)) });
+      if (variables.owner_family_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byOwner(variables.owner_family_id) });
       }
-      if (data.borrower_family_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byBorrower(String(data.borrower_family_id)) });
+      if (variables.borrower_family_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byBorrower(variables.borrower_family_id) });
       }
     },
     ...options,

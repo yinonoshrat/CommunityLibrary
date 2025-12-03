@@ -121,7 +121,13 @@ export function useBooks(
       
       return response;
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000, // 5 minutes - don't refetch for 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache for 10 minutes
+    placeholderData: () => {
+      // Return cached data immediately while revalidating in background
+      const cached = getBooksFromCache(queryClient, queryKey);
+      return cached ? { books: cached } : undefined;
+    },
     ...options,
   });
 }
