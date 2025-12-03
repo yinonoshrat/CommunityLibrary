@@ -42,8 +42,8 @@ export default function BookDetails() {
   
   // Reactive hooks - automatic caching and refetching
   const { data: userData } = useUser(user?.id);
-  const { data: bookResponse, isLoading: loading, error: bookError } = useBook(id ? parseInt(id) : null, user?.id);
-  const { data: activeLoansResponse } = useLoansByBook(id ? String(id) : undefined, 'active');
+  const { data: bookResponse, isLoading: loading, error: bookError } = useBook(id, user?.id);
+  const { data: activeLoansResponse } = useLoansByBook(id, 'active');
   
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);

@@ -6,16 +6,18 @@ import { queryKeys } from './queryKeys';
 export interface CreateBookData {
   title: string;
   author: string;
-  series?: string;
-  series_number?: number;
-  isbn?: string;
-  year_published?: number;
-  publisher?: string;
+  family_id: string;
+  status?: string;
+  series?: string | null;
+  series_number?: number | null;
+  isbn?: string | null;
+  publish_year?: number | null;
+  publisher?: string | null;
   genre?: string;
-  age_range?: string;
-  pages?: number;
-  description?: string;
-  cover_image_url?: string;
+  age_range?: string | null;
+  pages?: number | null;
+  description?: string | null;
+  cover_image_url?: string | null;
 }
 
 export interface UpdateBookData {
@@ -51,19 +53,16 @@ export function useCreateBook(
 
   return useMutation<BookResponse, Error, CreateBookData>({
     mutationFn: async (data: CreateBookData) => {
-      const response = await apiCall('/api/books', {
+      console.log('[useCreateBook] Sending data:', data);
+      const response = await apiCall<{ book: BookResponse }>('/api/books', {
         method: 'POST',
         body: JSON.stringify(data),
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create book');
-      }
-
-      return response.json();
+      console.log('[useCreateBook] Received response:', response);
+      return response.book;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('[useCreateBook] Success, invalidating queries');
       // Invalidate all book queries to reflect the new book
       queryClient.invalidateQueries({ queryKey: queryKeys.books.all });
     },
@@ -83,17 +82,11 @@ export function useUpdateBook(
 
   return useMutation<BookResponse, Error, UpdateBookData>({
     mutationFn: async (data: UpdateBookData) => {
-      const response = await apiCall(`/api/books/${bookId}`, {
+      const response = await apiCall<{ book: BookResponse }>(`/api/books/${bookId}`, {
         method: 'PUT',
         body: JSON.stringify(data),
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update book');
-      }
-
-      return response.json();
+      return response.book;
     },
     onSuccess: () => {
       // Invalidate the specific book's detail
@@ -117,14 +110,9 @@ export function useDeleteBook(
 
   return useMutation<void, Error, number>({
     mutationFn: async (bookId: number) => {
-      const response = await apiCall(`/api/books/${bookId}`, {
+      await apiCall(`/api/books/${bookId}`, {
         method: 'DELETE',
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to delete book');
-      }
     },
     onSuccess: (_, bookId) => {
       // Remove the specific book from cache

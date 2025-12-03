@@ -43,6 +43,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiCall } from '../utils/apiCall';
 import { searchBooks, type BookSearchResult } from '../utils/bookSearch';
+import { useCreateBook } from '../hooks/useBookMutations';
 
 interface BookFormData {
   title: string;
@@ -115,6 +116,31 @@ export default function AddBook() {
   const [success, setSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('הספר נוסף בהצלחה! מעביר לדף הספרים...');
   const [familyId, setFamilyId] = useState<string | null>(null);
+  
+  // Create book mutation
+  const createBookMutation = useCreateBook({
+    onSuccess: (data) => {
+      console.log('[AddBook] Book created successfully:', data);
+      const wasMerged = (data as any)._merged;
+      setSuccess(true);
+      setLoading(false);
+      
+      if (wasMerged) {
+        setSuccessMessage('הספר כבר קיים בקטלוג המשותף! נוסף לספריית המשפחה שלך.');
+      } else {
+        setSuccessMessage('הספר נוסף בהצלחה! מעביר לדף הספרים...');
+      }
+      
+      setTimeout(() => {
+        navigate('/books');
+      }, 1500);
+    },
+    onError: (err: Error) => {
+      console.error('[AddBook] Failed to add book:', err);
+      setError(err.message || 'שגיאה בהוספת הספר');
+      setLoading(false);
+    }
+  });
   
   // Toggle between single and bulk upload
   const [uploadMode, setUploadMode] = useState<'single' | 'bulk'>('single');
@@ -279,49 +305,24 @@ export default function AddBook() {
     setLoading(true);
     setError(null);
 
-    try {
-      const bookData = {
-        title: formData.title?.trim() || '',
-        author: formData.author?.trim() || '',
-        series: formData.series?.trim() || null,
-        series_number: formData.series_number ? parseInt(formData.series_number) : null,
-        isbn: formData.isbn?.trim() || null,
-        publish_year: formData.publish_year ? parseInt(formData.publish_year) : null,
-        publisher: formData.publisher?.trim() || null,
-        genre: formData.genre,
-        age_range: formData.age_range || null,
-        pages: formData.pages ? parseInt(formData.pages) : null,
-        description: formData.description?.trim() || null,
-        cover_image_url: formData.cover_image_url?.trim() || null,
-        family_id: familyId,
-        status: 'available',
-      };
+    const bookData = {
+      title: formData.title?.trim() || '',
+      author: formData.author?.trim() || '',
+      series: formData.series?.trim() || null,
+      series_number: formData.series_number ? parseInt(formData.series_number) : null,
+      isbn: formData.isbn?.trim() || null,
+      publish_year: formData.publish_year ? parseInt(formData.publish_year) : null,
+      publisher: formData.publisher?.trim() || null,
+      genre: formData.genre,
+      age_range: formData.age_range || null,
+      pages: formData.pages ? parseInt(formData.pages) : null,
+      description: formData.description?.trim() || null,
+      cover_image_url: formData.cover_image_url?.trim() || null,
+      family_id: familyId,
+      status: 'available',
+    };
 
-      const response = await apiCall('/api/books', {
-        method: 'POST',
-        body: JSON.stringify(bookData),
-      });
-
-      // Check if book was merged with existing catalog entry
-      const wasMerged = response.book?._merged;
-
-      setSuccess(true);
-      
-      // Show different success message based on merge status
-      if (wasMerged) {
-        setSuccessMessage('הספר כבר קיים בקטלוג המשותף! נוסף לספריית המשפחה שלך.');
-      } else {
-        setSuccessMessage('הספר נוסף בהצלחה! מעביר לדף הספרים...');
-      }
-      
-      setTimeout(() => {
-        navigate('/books');
-      }, 1500);
-    } catch (err: any) {
-      console.error('Failed to add book:', err);
-      setError(err.message || 'שגיאה בהוספת הספר');
-      setLoading(false);
-    }
+    createBookMutation.mutate(bookData as any);
   };
 
   // Bulk upload handlers

@@ -251,6 +251,10 @@ Your task:
 4. Group text that appears close together (same book spine/cover)
 5. For each book, identify the title and author from the grouped text and the image
 6. if you can identify also series and number include them in the output
+7. For each book return it genre from the following list in Hebrew:
+  'רומן',  'מתח',  'מדע בדיוני',  'פנטזיה',  'ביוגרפיה',  'היסטוריה',  'מדע',  'ילדים',  'נוער',  'עיון',  'שירה',  'אחר'
+8. For each book return it appropriate age range from the following list in Hebrew:
+  '0-3',  '4-6',  '7-9',  '10-12',  '13-15',  '16-18',  'מבוגרים',  'כל הגילאים'
 
 Understanding the data:
 - Each text block has a position (centerX, centerY) and orientation (horizontal/vertical)
@@ -262,14 +266,18 @@ Return ONLY a valid JSON array with this exact structure:
 [
   {
     "title": "exact book title from OCR",
-    "author": "author name from OCR or empty string if not found"
+    "author": "author name from OCR or empty string if not found",
     "series": "series name or empty string if not found",
-    "series_number": number or null if not found
+    "series_number": number or null if not found,
+    "genre": "genre in Hebrew from the predefined list",
+    "age_range": "age range in Hebrew from the predefined list"
   }
 ]
 
 Important guidelines:
 - Only include books where you can clearly match text to a visible book
+- Make sure that each book you outputed actually appears in the image
+- Try to extract as many books as possible
 - Use the exact text from the OCR results (preserve Hebrew/English/other languages)
 - If author is not visible, use empty string ""
 - Consider text proximity and orientation when grouping
@@ -462,7 +470,9 @@ Important guidelines:
         series: book.series ? String(book.series).trim() : (book.series_title ? String(book.series_title).trim() : null),
         series_number: this.normalizeSeriesNumber(
           book.series_number ?? book.seriesNumber ?? book.seriesIndex ?? null
-        )
+        ),
+        genre: book.genre ? String(book.genre).trim() : null,
+        age_range: book.age_range ? String(book.age_range).trim() : null
       }));
   }
 

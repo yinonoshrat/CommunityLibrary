@@ -436,7 +436,7 @@ export const getBookById = asyncHandler(async (req, res) => {
     if (book.book_catalog_id && userId) {
       // Fetch total likes count
       const { count: totalLikes, error: likesError } = await supabase
-        .from('book_likes')
+        .from('likes')
         .select('*', { count: 'exact', head: true })
         .eq('book_catalog_id', book.book_catalog_id);
 
@@ -444,8 +444,8 @@ export const getBookById = asyncHandler(async (req, res) => {
 
       // Check if user liked this book
       const { data: userLike, error: userLikeError } = await supabase
-        .from('book_likes')
-        .select('like_id')
+        .from('likes')
+        .select('id')
         .eq('book_catalog_id', book.book_catalog_id)
         .eq('user_id', userId)
         .maybeSingle();
@@ -556,8 +556,14 @@ export const createBook = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Title and author are required' });
   }
   
-  const book = await db.books.create(req.body);
-  res.status(201).json({ book });
+  try {
+    const book = await db.books.create(req.body);
+    res.status(201).json({ book });
+  } catch (error) {
+    console.error('Error creating book:', error);
+    console.error('Request body:', req.body);
+    throw error;
+  }
 });
 
 /**
@@ -799,10 +805,13 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
       const bookDetails = await searchBookDetails(book.title, book.author);
 
       if (bookDetails && bookDetails.confidence >= 70) {
-        // High confidence - merge all details
+        // High confidence - merge all details, prefer bookDetails but keep AI's genre/age_range if available
         return {
           ...book,
           ...bookDetails,
+          // Preserve genre and age_range from AI if bookDetails doesn't have them
+          genre: bookDetails.genre || book.genre || null,
+          age_range: bookDetails.age_range || book.age_range || null,
           confidence: 'high',
           confidenceScore: bookDetails.confidence
         };
@@ -824,8 +833,8 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
           description: bookDetails.description,
           cover_image_url: bookDetails.cover_image_url,
           isbn: bookDetails.isbn,
-          genre: bookDetails.genre,
-          age_range: bookDetails.age_range,
+          genre: book.genre || bookDetails.genre || null,
+          age_range: book.age_range || bookDetails.age_range || null,
           language: bookDetails.language,
           series: book.series || bookDetails.series,
           series_number: seriesNumber === null || Number.isNaN(seriesNumber) ? null : seriesNumber,
@@ -852,8 +861,28 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
 
   const enrichedBooks = await Promise.all(bookSearchPromises);
 
+  // Deduplicate books based on title, author, series, and series_number (case-insensitive)
+  const uniqueBooks = [];
+  const seen = new Set();
+  
+  for (const book of enrichedBooks) {
+    // Include series and series_number in the key to allow multiple books from same series
+    const series = (book.series || '').toLowerCase().trim();
+    const seriesNum = book.series_number != null ? String(book.series_number) : '';
+    const key = `${book.title.toLowerCase().trim()}|${(book.author || '').toLowerCase().trim()}|${series}|${seriesNum}`;
+    
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueBooks.push(book);
+    } else {
+      console.log(`Skipping duplicate detected book: "${book.title}" by ${book.author}${series ? ` (${series} #${seriesNum})` : ''}`);
+    }
+  }
+
+  console.log(`Detected ${enrichedBooks.length} books, ${uniqueBooks.length} unique after deduplication`);
+
   // Sort by confidence (high first, then medium, then low)
-  const sortedBooks = enrichedBooks.sort((a, b) => {
+  const sortedBooks = uniqueBooks.sort((a, b) => {
     const confidenceOrder = { high: 3, medium: 2, low: 1 };
     const orderDiff = confidenceOrder[b.confidence] - confidenceOrder[a.confidence];
     if (orderDiff !== 0) return orderDiff;
@@ -861,7 +890,6 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
     return b.confidenceScore - a.confidenceScore;
   });
 
-  console.log(`Enriched ${sortedBooks.length} books with online data`);
   console.log(`High confidence: ${sortedBooks.filter(b => b.confidence === 'high').length}`);
   console.log(`Medium confidence: ${sortedBooks.filter(b => b.confidence === 'medium').length}`);
   console.log(`Low confidence: ${sortedBooks.filter(b => b.confidence === 'low').length}`);

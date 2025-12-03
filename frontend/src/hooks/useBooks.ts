@@ -144,9 +144,10 @@ export function useBook(
       const response = await apiCall<BookResponse>(`/api/books/${bookId}${params}`);
       
       // Update normalized cache with this book
-      if (response.book) {
+      // Note: Individual book details use book_catalog_id, not catalogId
+      if (response.book && response.book.book_catalog_id) {
         const cache = getNormalizedCache(queryClient);
-        cache.byId[response.book.catalogId] = response.book;
+        cache.byId[response.book.book_catalog_id] = response.book as any;
         queryClient.setQueryData(queryKeys.books.normalized(), cache);
       }
       
