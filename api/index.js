@@ -2,22 +2,22 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import GeminiVisionService from './services/geminiVision.js';
-import OpenAIVisionService from './services/openaiVision.js';
-import HybridVisionService from './services/hybridVision.js';
-import { searchBookDetails, searchBooks } from './services/bookSearch.js';
-import booksRouter from './routes/books.routes.js';
-import authRouter from './routes/auth.routes.js';
-import familiesRouter from './routes/families.routes.js';
-import usersRouter from './routes/users.routes.js';
-import loansRouter from './routes/loans.routes.js';
-import systemRouter from './routes/system.routes.js';
-import searchRouter from './routes/search.routes.js';
-import reviewsRouter from './routes/reviews.routes.js';
-import recommendationsRouter from './routes/recommendations.routes.js';
-import { setAiVisionService } from './controllers/books.controller.js';
-import { extractUserFromToken } from './middleware/auth.middleware.js';
-import { errorHandler } from './middleware/errorHandler.middleware.js';
+import GeminiVisionService from '../backend_shared_src/services/geminiVision.js';
+import OpenAIVisionService from '../backend_shared_src/services/openaiVision.js';
+import HybridVisionService from '../backend_shared_src/services/hybridVision.js';
+import { searchBookDetails, searchBooks } from '../backend_shared_src/services/bookSearch.js';
+import booksRouter from '../backend_shared_src/routes/books.routes.js';
+import authRouter from '../backend_shared_src/routes/auth.routes.js';
+import familiesRouter from '../backend_shared_src/routes/families.routes.js';
+import usersRouter from '../backend_shared_src/routes/users.routes.js';
+import loansRouter from '../backend_shared_src/routes/loans.routes.js';
+import systemRouter from '../backend_shared_src/routes/system.routes.js';
+import searchRouter from '../backend_shared_src/routes/search.routes.js';
+import reviewsRouter from '../backend_shared_src/routes/reviews.routes.js';
+import recommendationsRouter from '../backend_shared_src/routes/recommendations.routes.js';
+import { setAiVisionService } from '../backend_shared_src/controllers/books.controller.js';
+import { extractUserFromToken } from '../backend_shared_src/middleware/auth.middleware.js';
+import { errorHandler } from '../backend_shared_src/middleware/errorHandler.middleware.js';
 
 const app = express();
 
