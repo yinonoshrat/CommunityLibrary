@@ -18,22 +18,15 @@ import {
 } from '@mui/material'
 import { supabase } from '../lib/supabase'
 import { apiCall } from '../utils/apiCall'
-
-interface Family {
-  id: string
-  name: string
-  phone?: string
-  email?: string
-  whatsapp?: string
-  members: { id: string; full_name: string }[]
-}
+import { useFamilies, type Family } from '../hooks/useFamilies'
 
 export default function CompleteProfile() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [families, setFamilies] = useState<Family[]>([])
-  const [loadingFamilies, setLoadingFamilies] = useState(true)
+  
+  // Use React Query hook for families
+  const { data: families = [], isLoading: loadingFamilies } = useFamilies()
 
   // User details (pre-filled from OAuth)
   const [fullName, setFullName] = useState('')
@@ -49,7 +42,6 @@ export default function CompleteProfile() {
 
   useEffect(() => {
     loadUserData()
-    loadFamilies()
   }, [])
 
   const loadUserData = async () => {
@@ -70,20 +62,9 @@ export default function CompleteProfile() {
     }
   }
 
-  const loadFamilies = async () => {
-    try {
-      const response = await apiCall('/families')
-      setFamilies(response.families || [])
-    } catch (err) {
-      console.error('Failed to load families:', err)
-    } finally {
-      setLoadingFamilies(false)
-    }
-  }
-
   const getFamilyDisplayName = (family: Family) => {
     const duplicates = families.filter(f => f.name === family.name)
-    if (duplicates.length > 1) {
+    if (duplicates.length > 1 && family.members) {
       const memberNames = family.members.map(m => m.full_name).join(', ')
       return `${family.name} (${memberNames || 'ללא חברים'})`
     }

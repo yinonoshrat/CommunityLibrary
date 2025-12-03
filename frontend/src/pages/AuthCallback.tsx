@@ -29,15 +29,27 @@ export default function AuthCallback() {
         
         if (user) {
           try {
-            // Try to get user profile
-            await apiCall(`/users/${user.id}`)
+            // Try to get user profile from our database
+            const response = await apiCall('/auth/me')
             
-            // User exists, navigate to home
-            navigate('/')
+            if (response.user) {
+              // User exists, navigate to home
+              console.log('User found in database, navigating to home')
+              navigate('/')
+            } else {
+              // User doesn't exist in database, need to complete registration
+              console.log('User not found in database, redirecting to complete profile')
+              navigate('/complete-profile')
+            }
           } catch (err: any) {
-            // User doesn't exist in database, need to complete registration
-            console.log('User not found in database, redirecting to complete profile')
-            navigate('/complete-profile')
+            // 401 or 404 means user doesn't exist in our database yet
+            if (err.message.includes('401') || err.message.includes('404') || err.message.includes('User not found')) {
+              console.log('User not found in database, redirecting to complete profile')
+              navigate('/complete-profile')
+            } else {
+              // Other error, show it
+              throw err
+            }
           }
         }
       } catch (err: any) {

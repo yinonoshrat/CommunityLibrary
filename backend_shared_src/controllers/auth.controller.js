@@ -298,6 +298,12 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
-  const userProfile = await db.users.getById(user.id);
-  res.json({ user: userProfile });
+  try {
+    const userProfile = await db.users.getById(user.id);
+    res.json({ user: userProfile });
+  } catch (err) {
+    // User exists in Supabase Auth but not in our database yet
+    console.log('User authenticated but not found in database:', user.id);
+    return res.status(404).json({ error: 'User not found in database' });
+  }
 });
