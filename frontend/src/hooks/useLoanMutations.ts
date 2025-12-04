@@ -4,6 +4,7 @@ import { queryKeys } from './queryKeys';
 
 // Types for loan operations
 export interface CreateLoanData {
+  id?: string; // Optional - will be generated on frontend if not provided
   family_book_id: string;
   borrower_family_id: string;
   owner_family_id: string;
@@ -16,15 +17,32 @@ export interface UpdateLoanData {
   status?: 'active' | 'returned' | 'overdue';
 }
 
-export interface LoanResponse {
-  loan_id: number;
-  book_id: number;
-  owner_family_id: number;
-  borrower_family_id: number;
+export interface LoanData {
+  id: string;
+  family_book_id: string;
+  owner_family_id: string;
+  borrower_family_id: string;
   loan_date: string;
-  due_date: string;
+  due_date: string | null;
   return_date: string | null;
   status: 'active' | 'returned' | 'overdue';
+  borrower_family?: {
+    id: string;
+    name: string;
+    phone?: string;
+    whatsapp?: string;
+  };
+  owner_family?: {
+    id: string;
+    name: string;
+    phone?: string;
+    whatsapp?: string;
+  };
+  created_at?: string;
+}
+
+export interface LoanResponse {
+  loan: LoanData;
 }
 
 /**
@@ -38,14 +56,32 @@ export function useCreateLoan(
 
   return useMutation<LoanResponse, Error, CreateLoanData>({
     mutationFn: async (data: CreateLoanData) => {
+      // Use the UUID provided by the caller (should always be provided now)
+      if (!data.id) {
+        console.error('[useCreateLoan.mutationFn] ERROR: No loan ID provided! This should not happen.');
+      }
+      const loanId = data.id || crypto.randomUUID(); // Fallback just in case
+      console.log('[useCreateLoan.mutationFn] Using loan ID:', loanId, 'family_book_id:', data.family_book_id);
+      
       return apiCall<LoanResponse>('/api/loans', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          id: loanId,
+        }),
       });
     },
     onMutate: async (variables) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.books.lists() });
+      await queryClient.cancelQueries({ queryKey: ['books', 'normalized'] });
+      
+      // Use the loan ID provided by the caller (should always be provided now)
+      if (!variables.id) {
+        console.error('[useCreateLoan.onMutate] ERROR: No loan ID provided! This should not happen.');
+      }
+      const loanId = variables.id || crypto.randomUUID(); // Fallback just in case
+      console.log('[useCreateLoan.onMutate] Using loan ID:', loanId, 'family_book_id:', variables.family_book_id);
       
       // Get normalized cache
       const normalizedCacheKey = ['books', 'normalized'];
@@ -53,7 +89,7 @@ export function useCreateLoan(
       
       // If no cache exists yet, skip optimistic update
       if (!cache || !cache.byId) {
-        return { previousCache: null };
+        return { previousCache: null, targetCatalogId: null, familyBookId: variables.family_book_id, loanId };
       }
       
       // Snapshot for rollback
@@ -63,48 +99,37 @@ export function useCreateLoan(
       let targetCatalogId: string | null = null;
       let oldBook: any = null;
       
-      if (cache.byId) {
-        for (const [catalogId, book] of Object.entries(cache.byId)) {
-          const hasOwnedCopy = (book as any).viewerContext?.ownedCopies?.some(
-            (copy: any) => copy.familyBookId === variables.family_book_id
-          );
-          if (hasOwnedCopy) {
-            targetCatalogId = catalogId;
-            oldBook = book;
-            break;
-          }
+      for (const [catalogId, book] of Object.entries(cache.byId)) {
+        const hasOwnedCopy = (book as any).viewerContext?.ownedCopies?.some(
+          (copy: any) => copy.familyBookId === variables.family_book_id
+        );
+        if (hasOwnedCopy) {
+          targetCatalogId = catalogId;
+          oldBook = book;
+          break;
         }
       }
       
       if (oldBook && targetCatalogId) {
-        // Try to get the borrower family name from families cache
+        // Get borrower family name from families cache
         const familiesQueryData = queryClient.getQueriesData({ queryKey: ['families'] });
-        
         let borrowerFamilyName: string | undefined;
         
-        // Check all families queries for the borrower family
         for (const [, data] of familiesQueryData) {
           if (Array.isArray(data)) {
-            // Direct array of families
             const family = data.find((f: any) => String(f.id) === variables.borrower_family_id);
             if (family?.name) {
               borrowerFamilyName = family.name;
               break;
             }
-          } else if (data && typeof data === 'object' && 'families' in data) {
-            // Wrapped in families property
-            const families = (data as any).families;
-            if (Array.isArray(families)) {
-              const family = families.find((f: any) => String(f.id) === variables.borrower_family_id);
-              if (family?.name) {
-                borrowerFamilyName = family.name;
-                break;
-              }
-            }
           }
         }
         
-        // Create new book object with updated loan info
+        // Use real UUID (same one being sent to server)
+        const optimisticLoanId = loanId;
+        console.log('[useCreateLoan.onMutate] Creating optimistic loan with ID:', optimisticLoanId);
+        
+        // Create new book object with optimistic loan (using real UUID)
         const updatedBook = {
           ...oldBook,
           viewerContext: {
@@ -114,12 +139,15 @@ export function useCreateLoan(
                 return {
                   ...copy,
                   loan: {
-                    id: 'temp-' + Date.now(),
+                    id: optimisticLoanId, // Real UUID that matches server
+                    familyBookId: variables.family_book_id,
+                    borrowerFamilyId: variables.borrower_family_id,
+                    ownerFamilyId: variables.owner_family_id,
                     borrowerFamily: { 
                       id: variables.borrower_family_id, 
                       name: borrowerFamilyName || 'טוען...'
                     },
-                    status: 'active',
+                    status: 'active' as const,
                     loanDate: new Date().toISOString(),
                     dueDate: null,
                   }
@@ -134,7 +162,7 @@ export function useCreateLoan(
           }
         };
         
-        // Update normalized cache with new book object
+        // Update normalized cache
         const newCache = {
           ...cache,
           byId: {
@@ -142,11 +170,13 @@ export function useCreateLoan(
             [targetCatalogId]: updatedBook
           }
         };
+        console.log('[useCreateLoan.onMutate] Saving to normalized cache, loan ID:', 
+          newCache.byId[targetCatalogId]?.viewerContext?.ownedCopies?.find((c: any) => c.familyBookId === variables.family_book_id)?.loan?.id
+        );
         queryClient.setQueryData(normalizedCacheKey, newCache);
         
-        // Update all book list queries to trigger re-render
+        // Update all book list queries
         const queries = queryClient.getQueriesData({ queryKey: ['books', 'list'] });
-        
         queries.forEach(([queryKey, data]: [any, any]) => {
           if (data?.books) {
             const updatedBooks = data.books.map((b: any) => 
@@ -157,34 +187,122 @@ export function useCreateLoan(
         });
       }
       
-      return { previousCache };
+      return { previousCache, targetCatalogId, familyBookId: variables.family_book_id, loanId };
     },
     onError: (_err, _variables, context) => {
       // Rollback on error
-      if (context && typeof context === 'object' && 'previousCache' in context && context.previousCache) {
+      if (context?.previousCache) {
         queryClient.setQueryData(['books', 'normalized'], context.previousCache);
-        queryClient.invalidateQueries({ queryKey: queryKeys.books.lists() });
+        
+        // Update all list queries to reflect rollback
+        const queries = queryClient.getQueriesData({ queryKey: ['books', 'list'] });
+        queries.forEach(([queryKey, data]: [any, any]) => {
+          if (data?.books && context.targetCatalogId) {
+            const rolledBackBook = context.previousCache.byId[context.targetCatalogId];
+            if (rolledBackBook) {
+              const updatedBooks = data.books.map((b: any) => 
+                b.catalogId === context.targetCatalogId ? rolledBackBook : b
+              );
+              queryClient.setQueryData(queryKey, { ...data, books: updatedBooks });
+            }
+          }
+        });
       }
     },
-    onSuccess: (_data, variables) => {
-      // Refetch books to replace optimistic update with real data
-      queryClient.invalidateQueries({ queryKey: queryKeys.books.lists() });
+    onSuccess: (responseData, variables, context) => {
+      // Validate server response
+      if (!responseData?.loan?.id) {
+        console.error('Invalid loan response:', responseData);
+        return;
+      }
       
-      // Invalidate loan-specific queries
+      const serverLoan = responseData.loan;
+      
+      // Verify the server used our UUID
+      console.log('[useCreateLoan.onSuccess] Server response:', {
+        serverLoanId: serverLoan.id,
+        contextLoanId: context?.loanId,
+        familyBookId: variables.family_book_id,
+        match: serverLoan.id === context?.loanId
+      });
+      
+      if (context?.loanId && serverLoan.id !== context.loanId) {
+        console.warn('Server returned different loan ID than expected:', {
+          expected: context.loanId,
+          received: serverLoan.id
+        });
+      }
+      
+      // Get current cache
+      const normalizedCacheKey = ['books', 'normalized'];
+      const cache = queryClient.getQueryData<any>(normalizedCacheKey);
+      
+      if (!cache?.byId || !context?.targetCatalogId) {
+        return;
+      }
+      
+      const currentBook = cache.byId[context.targetCatalogId];
+      if (!currentBook) return;
+      
+      // Enrich optimistic loan with additional server data
+      // The loan ID is already correct, just add server-provided fields
+      console.log('[useCreateLoan.onSuccess] Current copy loan before enrichment:', 
+        currentBook.viewerContext?.ownedCopies?.find((c: any) => c.familyBookId === variables.family_book_id)?.loan
+      );
+      
+      const updatedBook = {
+        ...currentBook,
+        viewerContext: {
+          ...currentBook.viewerContext,
+          ownedCopies: currentBook.viewerContext?.ownedCopies?.map((copy: any) => {
+            if (copy.familyBookId === variables.family_book_id) {
+              const enrichedLoan = {
+                ...copy.loan, // Keep existing data (ID is already correct)
+                id: serverLoan.id, // EXPLICITLY set server ID to be safe
+                // Enrich with server data
+                borrowerFamily: serverLoan.borrower_family || copy.loan?.borrowerFamily,
+                ownerFamily: serverLoan.owner_family,
+                loanDate: serverLoan.loan_date || serverLoan.created_at || copy.loan?.loanDate,
+                dueDate: serverLoan.due_date || copy.loan?.dueDate,
+              };
+              console.log('[useCreateLoan.onSuccess] Enriched loan:', enrichedLoan);
+              return {
+                ...copy,
+                loan: enrichedLoan
+              };
+            }
+            return copy;
+          }) || []
+        }
+      };
+      
+      // Update normalized cache with enriched data
+      const newCache = {
+        ...cache,
+        byId: {
+          ...cache.byId,
+          [context.targetCatalogId]: updatedBook
+        }
+      };
+      queryClient.setQueryData(normalizedCacheKey, newCache);
+      console.log('[useCreateLoan.onSuccess] Updated normalized cache with loan ID:', 
+        newCache.byId[context.targetCatalogId]?.viewerContext?.ownedCopies?.find((c: any) => c.familyBookId === variables.family_book_id)?.loan?.id
+      );
+      
+      // Update all book list queries
+      const queries = queryClient.getQueriesData({ queryKey: ['books', 'list'] });
+      console.log('[useCreateLoan.onSuccess] Updating', queries.length, 'list queries');
+      queries.forEach(([queryKey, data]: [any, any]) => {
+        if (data?.books) {
+          const updatedBooks = data.books.map((b: any) => 
+            b.catalogId === context.targetCatalogId ? updatedBook : b
+          );
+          queryClient.setQueryData(queryKey, { ...data, books: updatedBooks });
+        }
+      });
+      
+      // Invalidate loan queries (but NOT book queries - we already have the right data)
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all });
-      
-      // Invalidate the specific book's loan queries using the variables
-      if (variables.family_book_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byBook(variables.family_book_id) });
-      }
-      
-      // Invalidate owner and borrower family loan queries
-      if (variables.owner_family_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byOwner(variables.owner_family_id) });
-      }
-      if (variables.borrower_family_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.byBorrower(variables.borrower_family_id) });
-      }
     },
     ...options,
   });
@@ -211,6 +329,7 @@ export function useUpdateLoan(
     onMutate: async (variables) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.books.lists() });
+      await queryClient.cancelQueries({ queryKey: ['books', 'normalized'] });
       
       // Get normalized cache
       const normalizedCacheKey = ['books', 'normalized'];
@@ -218,7 +337,7 @@ export function useUpdateLoan(
       
       // If no cache exists yet, skip optimistic update
       if (!cache || !cache.byId) {
-        return { previousCache: null };
+        return { previousCache: null, targetCatalogId: null };
       }
       
       // Snapshot for rollback
@@ -228,7 +347,7 @@ export function useUpdateLoan(
       let targetCatalogId: string | null = null;
       let oldBook: any = null;
       
-      if (variables.status === 'returned' && familyBookId && cache.byId) {
+      if (variables.status === 'returned' && familyBookId) {
         for (const [catalogId, book] of Object.entries(cache.byId)) {
           const hasOwnedCopy = (book as any).viewerContext?.ownedCopies?.some(
             (copy: any) => copy.familyBookId === familyBookId
@@ -242,7 +361,7 @@ export function useUpdateLoan(
       }
       
       if (oldBook && targetCatalogId) {
-        // Create new book object with loan removed
+        // Create new book object with loan removed (optimistic)
         const updatedBook = {
           ...oldBook,
           viewerContext: {
@@ -251,7 +370,7 @@ export function useUpdateLoan(
               if (copy.familyBookId === familyBookId) {
                 return {
                   ...copy,
-                  loan: null
+                  loan: null  // Remove loan optimistically
                 };
               }
               return copy;
@@ -263,7 +382,7 @@ export function useUpdateLoan(
           }
         };
         
-        // Update normalized cache with new book object
+        // Update normalized cache
         const newCache = {
           ...cache,
           byId: {
@@ -273,9 +392,8 @@ export function useUpdateLoan(
         };
         queryClient.setQueryData(normalizedCacheKey, newCache);
         
-        // Update all book list queries to trigger re-render
+        // Update all book list queries
         const queries = queryClient.getQueriesData({ queryKey: ['books', 'list'] });
-        
         queries.forEach(([queryKey, data]: [any, any]) => {
           if (data?.books) {
             const updatedBooks = data.books.map((b: any) => 
@@ -286,23 +404,36 @@ export function useUpdateLoan(
         });
       }
       
-      return { previousCache };
+      return { previousCache, targetCatalogId };
     },
     onError: (_err, _variables, context) => {
       // Rollback on error
-      if (context && typeof context === 'object' && 'previousCache' in context && context.previousCache) {
+      if (context?.previousCache) {
         queryClient.setQueryData(['books', 'normalized'], context.previousCache);
-        queryClient.invalidateQueries({ queryKey: queryKeys.books.lists() });
+        
+        // Update all list queries to reflect rollback
+        const queries = queryClient.getQueriesData({ queryKey: ['books', 'list'] });
+        queries.forEach(([queryKey, data]: [any, any]) => {
+          if (data?.books && context.targetCatalogId) {
+            const rolledBackBook = context.previousCache.byId[context.targetCatalogId];
+            if (rolledBackBook) {
+              const updatedBooks = data.books.map((b: any) => 
+                b.catalogId === context.targetCatalogId ? rolledBackBook : b
+              );
+              queryClient.setQueryData(queryKey, { ...data, books: updatedBooks });
+            }
+          }
+        });
       }
     },
-    onSuccess: () => {
-      // Invalidate loan-specific queries only
-      // Don't invalidate book queries - optimistic update already handles that
-      // Books will refresh naturally after staleTime (5 minutes) or manual refresh
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all });
+    onSuccess: (responseData, _variables, context) => {
+      // Server confirms the return - loan is gone, book is available
+      // Cache already updated optimistically, just confirm it's correct
+      // If server returned different data, we'd update here, but for return
+      // the optimistic update (loan removed, availableCopies +1) is final
       
-      // Note: We don't have access to specific loan data here anymore
-      // so we just invalidate all loan queries which will refresh as needed
+      // Invalidate loan queries only
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all });
     },
     ...options,
   });

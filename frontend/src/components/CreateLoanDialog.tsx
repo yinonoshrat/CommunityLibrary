@@ -79,7 +79,12 @@ export default function CreateLoanDialog({
     }
 
     setError('');
+    // Generate UUID once, before mutation starts
+    const loanId = crypto.randomUUID();
+    console.log('[CreateLoanDialog] Generated loan ID:', loanId, 'for family_book_id:', book.id);
+    
     createLoan.mutate({
+      id: loanId, // Pass the UUID to both onMutate and mutationFn
       family_book_id: book.id,
       borrower_family_id: selectedFamilyId,
       owner_family_id: userFamilyId,

@@ -177,12 +177,11 @@ export default function MyBooks() {
   }, [])
 
   const handleLoanCreated = useCallback(() => {
-    // Auto-refetch books to get updated loan status
+    // Close dialog - cache is already updated by the mutation
     setLoanDialogOpen(false)
     setSelectedBookForLoan(null)
-    // Force immediate refetch, bypassing cache
-    refetch();
-  }, [refetch])
+    // No need to refetch - the mutation's onSuccess already updated the cache
+  }, [])
 
   const handleOpenLoanDialog = useCallback((book: { id: string; title: string; author: string }) => {
     setSelectedBookForLoan(book)

@@ -55,16 +55,38 @@ export const createLoan = asyncHandler(async (req, res) => {
 
   // Always create loans with active status
   req.body.status = 'active';
+  
+  // Log if client provided a loan ID (for frontend-generated UUIDs)
+  if (req.body.id) {
+    console.log('Using client-provided loan ID:', req.body.id);
+  }
 
-  const loan = await db.loans.create(req.body);
-  console.log('Loan created:', loan);
+  try {
+    const loan = await db.loans.create(req.body);
+    console.log('Loan created successfully:', loan.id);
 
-  // Update book status to on_loan
-  console.log('Updating book status for:', bookId);
-  await db.books.update(bookId, { status: 'on_loan' });
-  console.log('Book status updated');
+    // Update book status to on_loan
+    console.log('Updating book status for family_book_id:', bookId);
+    try {
+      await db.books.update(bookId, { status: 'on_loan' });
+      console.log('Book status updated to on_loan');
+    } catch (bookUpdateError) {
+      console.error('Error updating book status:', bookUpdateError);
+      // Don't fail the whole operation if book update fails
+      // The loan was created successfully
+    }
 
-  res.status(201).json({ loan });
+    res.status(201).json({ loan });
+  } catch (error) {
+    console.error('Error creating loan:', error);
+    
+    if (error.code === '23503') {
+      // Foreign key violation
+      return res.status(400).json({ error: 'Invalid family_book_id or borrower_family_id' });
+    }
+    
+    throw error;
+  }
 });
 
 /**

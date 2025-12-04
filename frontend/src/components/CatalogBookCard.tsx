@@ -65,6 +65,7 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, 
 
   const handleMarkReturned = () => {
     if (!viewerOwnedCopy?.loan || !onMarkReturned) return
+    console.log('[CatalogBookCard.handleMarkReturned] Loan ID:', viewerOwnedCopy.loan.id, 'Full loan:', viewerOwnedCopy.loan);
     onMarkReturned({ book, loan: viewerOwnedCopy.loan })
   }
 
@@ -297,11 +298,22 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, 
 // Memoize to prevent unnecessary re-renders when navigating back to list
 export default React.memo(CatalogBookCard, (prevProps, nextProps) => {
   // Only re-render if book data or callbacks actually changed
+  
+  // Check loan status changes
+  const prevOwnedCopy = prevProps.book.viewerContext.ownedCopies[0];
+  const nextOwnedCopy = nextProps.book.viewerContext.ownedCopies[0];
+  const prevHasLoan = !!prevOwnedCopy?.loan;
+  const nextHasLoan = !!nextOwnedCopy?.loan;
+  const prevLoanId = prevOwnedCopy?.loan?.id;
+  const nextLoanId = nextOwnedCopy?.loan?.id;
+  
   return (
     prevProps.book.catalogId === nextProps.book.catalogId &&
     prevProps.book.stats.totalLikes === nextProps.book.stats.totalLikes &&
     prevProps.book.stats.userLiked === nextProps.book.stats.userLiked &&
     prevProps.book.stats.availableCopies === nextProps.book.stats.availableCopies &&
+    prevHasLoan === nextHasLoan &&
+    prevLoanId === nextLoanId &&
     prevProps.onMarkReturned === nextProps.onMarkReturned &&
     prevProps.onLoanSuccess === nextProps.onLoanSuccess &&
     prevProps.onCreateLoan === nextProps.onCreateLoan
