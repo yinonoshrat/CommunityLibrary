@@ -94,6 +94,69 @@ function getBooksFromCache(
 }
 
 /**
+ * Filter books from normalized cache based on search filters
+ * Used for instant client-side filtering while waiting for server response
+ */
+function filterBooksFromCache(
+  queryClient: any,
+  filters: BookSearchParams
+): CatalogBook[] | undefined {
+  const cache = getNormalizedCache(queryClient);
+  const allBooks = Object.values(cache.byId);
+  
+  if (allBooks.length === 0) return undefined;
+  
+  let filtered = allBooks;
+  
+  // Filter by search query (title, author, series)
+  if (filters.q && filters.q.trim()) {
+    const query = filters.q.trim().toLowerCase();
+    filtered = filtered.filter(book => {
+      const title = (book.titleHebrew || book.title || '').toLowerCase();
+      const author = (book.authorHebrew || book.author || '').toLowerCase();
+      const series = (book.series || '').toLowerCase();
+      return title.includes(query) || author.includes(query) || series.includes(query);
+    });
+  }
+  
+  // Filter by view (my/borrowed/all)
+  if (filters.view === 'my') {
+    filtered = filtered.filter(book => book.viewerContext?.owns);
+  } else if (filters.view === 'borrowed') {
+    filtered = filtered.filter(book => book.viewerContext?.borrowed);
+  }
+  
+  // Filter by status (available/on_loan)
+  if (filters.status === 'available') {
+    filtered = filtered.filter(book => (book.stats?.availableCopies || 0) > 0);
+  } else if (filters.status === 'on_loan') {
+    filtered = filtered.filter(book => (book.stats?.loanedCopies || 0) > 0);
+  }
+  
+  // Filter by genre
+  if (filters.genre && filters.genre !== 'all') {
+    filtered = filtered.filter(book => book.genre === filters.genre);
+  }
+  
+  // Filter by age level
+  if (filters.ageLevel && filters.ageLevel !== 'all') {
+    filtered = filtered.filter(book => book.ageLevel === filters.ageLevel);
+  }
+  
+  // Sort books
+  if (filters.sortBy === 'author') {
+    filtered.sort((a, b) => (a.authorHebrew || a.author || '').localeCompare(b.authorHebrew || b.author || ''));
+  } else if (filters.sortBy === 'updated') {
+    filtered.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+  } else {
+    // Default: sort by title
+    filtered.sort((a, b) => (a.titleHebrew || a.title || '').localeCompare(b.titleHebrew || b.title || ''));
+  }
+  
+  return filtered;
+}
+
+/**
  * Fetch books with filters
  * Uses normalized caching - all books stored by ID, queries track which books they contain
  */
@@ -124,9 +187,14 @@ export function useBooks(
     staleTime: 5 * 60 * 1000, // 5 minutes - don't refetch for 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache for 10 minutes
     placeholderData: () => {
-      // Return cached data immediately while revalidating in background
-      const cached = getBooksFromCache(queryClient, queryKey);
-      return cached ? { books: cached } : undefined;
+      // First try exact query match from cache
+      const exactMatch = getBooksFromCache(queryClient, queryKey);
+      if (exactMatch) return { books: exactMatch };
+      
+      // If no exact match, filter all cached books client-side
+      // This provides instant results while fetching fresh data from server
+      const filteredBooks = filterBooksFromCache(queryClient, filters);
+      return filteredBooks ? { books: filteredBooks } : undefined;
     },
     ...options,
   });
