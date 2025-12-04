@@ -23,6 +23,7 @@ import {
   Add as AddIcon,
   Search as SearchIcon,
   Refresh as RefreshIcon,
+  Clear as ClearIcon,
 } from '@mui/icons-material'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useBooks } from '../hooks/useBooks'
@@ -36,7 +37,7 @@ import { useUser } from '../hooks/useUser'
 type BookView = 'my' | 'borrowed' | 'all'
 
 const STATUS_OPTIONS = [
-  { value: 'all', label: 'כל הסטטוסים' },
+  { value: 'all', label: 'הכל' },
   { value: 'available', label: 'זמין' },
   { value: 'on_loan', label: 'מושאל' },
 ]
@@ -248,8 +249,8 @@ export default function MyBooks() {
       )}
 
       <Box component="form" onSubmit={handleSearchSubmit} mb={4}>
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 6 }}>
+        <Grid container spacing={1.5}>
+          <Grid size={{ xs: 12, md: 5 }}>
             <TextField
               fullWidth
               placeholder="חפש לפי שם, מחבר או סדרה"
@@ -261,10 +262,22 @@ export default function MyBooks() {
                     <SearchIcon />
                   </InputAdornment>
                 ),
+                endAdornment: searchQuery && (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label="נקה חיפוש"
+                      onClick={() => setSearchQuery('')}
+                      edge="end"
+                      size="small"
+                    >
+                      <ClearIcon />
+                    </IconButton>
+                  </InputAdornment>
+                ),
               }}
             />
           </Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 4, md: 2.5 }}>
             <FormControl fullWidth>
               <InputLabel>סטטוס</InputLabel>
               <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} label="סטטוס">
@@ -288,7 +301,7 @@ export default function MyBooks() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 4, md: 2.5 }}>
             <FormControl fullWidth>
               <InputLabel>מיון</InputLabel>
               <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="מיון">
