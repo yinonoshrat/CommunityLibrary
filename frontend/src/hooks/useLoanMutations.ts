@@ -45,16 +45,23 @@ export interface LoanResponse {
   loan: LoanData;
 }
 
+interface CreateLoanContext {
+  previousCache: any;
+  targetCatalogId: string | null;
+  familyBookId: string;
+  loanId: string;
+}
+
 /**
  * Hook for creating a new loan
  * Uses optimistic updates for instant UI feedback
  */
 export function useCreateLoan(
-  options?: Omit<UseMutationOptions<LoanResponse, Error, CreateLoanData>, 'mutationFn'>
+  options?: Omit<UseMutationOptions<LoanResponse, Error, CreateLoanData, CreateLoanContext>, 'mutationFn'>
 ) {
   const queryClient = useQueryClient();
 
-  return useMutation<LoanResponse, Error, CreateLoanData>({
+  return useMutation<LoanResponse, Error, CreateLoanData, CreateLoanContext>({
     mutationFn: async (data: CreateLoanData) => {
       // Use the UUID provided by the caller (should always be provided now)
       if (!data.id) {
@@ -308,6 +315,11 @@ export function useCreateLoan(
   });
 }
 
+interface UpdateLoanContext {
+  previousCache: any;
+  targetCatalogId: string | null;
+}
+
 /**
  * Hook for updating an existing loan (e.g., returning a book)
  * Uses optimistic updates for instant UI feedback
@@ -315,11 +327,11 @@ export function useCreateLoan(
 export function useUpdateLoan(
   loanId: string,
   familyBookId?: string,
-  options?: Omit<UseMutationOptions<LoanResponse, Error, UpdateLoanData>, 'mutationFn'>
+  options?: Omit<UseMutationOptions<LoanResponse, Error, UpdateLoanData, UpdateLoanContext>, 'mutationFn'>
 ) {
   const queryClient = useQueryClient();
 
-  return useMutation<LoanResponse, Error, UpdateLoanData>({
+  return useMutation<LoanResponse, Error, UpdateLoanData, UpdateLoanContext>({
     mutationFn: async (data: UpdateLoanData) => {
       return apiCall<LoanResponse>(`/api/loans/${loanId}`, {
         method: 'PUT',
@@ -426,7 +438,7 @@ export function useUpdateLoan(
         });
       }
     },
-    onSuccess: (responseData, _variables, context) => {
+    onSuccess: (_responseData, _variables, _context) => {
       // Server confirms the return - loan is gone, book is available
       // Cache already updated optimistically, just confirm it's correct
       // If server returned different data, we'd update here, but for return

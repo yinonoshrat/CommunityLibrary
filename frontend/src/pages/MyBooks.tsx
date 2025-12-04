@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Virtuoso } from 'react-virtuoso'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Container,
   Typography,
@@ -69,6 +70,7 @@ export default function MyBooks() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { data: userData } = useUser(user?.id)
+  const queryClient = useQueryClient()
   const userFamilyId = userData?.user?.family_id
   const [searchParams, setSearchParams] = useSearchParams()
   const initialView = (searchParams.get('view') as BookView) || 'my'
@@ -139,8 +141,10 @@ export default function MyBooks() {
   }, [searchQuery])
 
   const handleRefresh = useCallback(() => {
+    // Invalidate both the books list and normalized cache
+    queryClient.invalidateQueries({ queryKey: ['books'] });
     refetch();
-  }, [refetch])
+  }, [refetch, queryClient])
 
   const [selectedFamilyBookId, setSelectedFamilyBookId] = useState<string | undefined>()
   
