@@ -22,7 +22,7 @@ jobs:
           version: latest
       
       - name: Deploy Edge Functions to Dev
-        run: npx supabase functions deploy detect-books --project-ref ${{ secrets.SUPABASE_DEV_PROJECT_REF }}
+        run: npx supabase functions deploy detect-books --project-ref $SUPABASE_DEV_PROJECT_REF
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
@@ -40,6 +40,6 @@ jobs:
           version: latest
       
       - name: Deploy Edge Functions to Production
-        run: npx supabase functions deploy detect-books --project-ref ${{ secrets.SUPABASE_PROD_PROJECT_REF }}
+        run: npx supabase functions deploy detect-books --project-ref $SUPABASE_PROD_PROJECT_REF
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
