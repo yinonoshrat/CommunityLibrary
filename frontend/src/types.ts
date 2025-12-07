@@ -155,7 +155,6 @@ export interface CatalogBook {
     totalLikes: number;
     userLiked: boolean;
   };
-  likesCount: number;
   owners: BookOwner[];
   viewerContext: CatalogBookViewerContext;
 }

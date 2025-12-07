@@ -174,6 +174,24 @@ Deno.serve(async (req: Request) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Get the job to retrieve user_id
+    const { data: jobData, error: jobError } = await supabase
+      .from('detection_jobs')
+      .select('user_id')
+      .eq('id', jobId)
+      .single();
+
+    if (jobError || !jobData) {
+      console.error(`Failed to get job ${jobId}:`, jobError);
+      return new Response(JSON.stringify({ error: 'Job not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const userId = jobData.user_id;
+    console.log(`Processing for user: ${userId}`);
+
     // Update job status to processing
     await supabase
       .from('detection_jobs')
@@ -235,8 +253,10 @@ Deno.serve(async (req: Request) => {
 
     await supabase
       .from('detection_jobs')
-      .update({ progress: 90, updated_at: new Date().toISOString() })
+      .update({ progress: 80, updated_at: new Date().toISOString() })
       .eq('id', jobId);
+
+    console.log(`Checking ownership for user ${userId}...`);
 
     // Deduplicate books (same logic as backend)
     const uniqueBooks: any[] = [];
@@ -249,9 +269,61 @@ Deno.serve(async (req: Request) => {
       
       if (!seen.has(key)) {
         seen.add(key);
-        uniqueBooks.push(book);
+        // Initialize alreadyOwned to false by default
+        uniqueBooks.push({ ...book, alreadyOwned: false });
       }
     }
+
+    // Check which books are already owned by the user
+    try {
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('family_id')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (userError) {
+        console.log(`User lookup warning: ${userError.message} - skipping ownership check`);
+      } else if (userData?.family_id) {
+        // Get all books in user's family catalog
+        const { data: ownedBooks, error: ownedError } = await supabase
+          .from('family_books')
+          .select('book_catalog_id, book_catalog!inner(title, author, series)')
+          .eq('family_id', userData.family_id);
+
+        if (ownedError) {
+          console.log(`Owned books lookup warning: ${ownedError.message} - skipping ownership check`);
+        } else if (ownedBooks) {
+          // Create a set of owned book keys for quick lookup
+          const ownedKeys = new Set<string>();
+          for (const owned of ownedBooks) {
+            const bookData = owned.book_catalog as any;
+            if (bookData) {
+              const series = (bookData.series || '').toLowerCase().trim();
+              const key = `${bookData.title.toLowerCase().trim()}|${(bookData.author || '').toLowerCase().trim()}|${series}`;
+              ownedKeys.add(key);
+            }
+          }
+
+          // Mark books as already owned
+          for (const book of uniqueBooks) {
+            const series = (book.series || '').toLowerCase().trim();
+            const key = `${book.title.toLowerCase().trim()}|${(book.author || '').toLowerCase().trim()}|${series}`;
+            book.alreadyOwned = ownedKeys.has(key);
+          }
+
+          console.log(`Found ${ownedKeys.size} books in user's catalog, marked ${uniqueBooks.filter(b => b.alreadyOwned).length} as already owned`);
+        }
+      }
+    } catch (ownershipError) {
+      console.error(`Ownership check failed: ${ownershipError.message} - continuing without ownership data`);
+      // Continue without ownership data - all books will have alreadyOwned: false
+    }
+
+    await supabase
+      .from('detection_jobs')
+      .update({ progress: 90, updated_at: new Date().toISOString() })
+      .eq('id', jobId);
 
     // Sort by confidence
     const sortedBooks = uniqueBooks.sort((a, b) => {

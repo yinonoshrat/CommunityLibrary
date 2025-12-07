@@ -106,6 +106,7 @@ interface DetectedBook {
   series?: string;
   series_number?: number;
   source?: 'ai' | 'manual';
+  alreadyOwned?: boolean;
 }
 
 export default function AddBook() {
@@ -372,7 +373,7 @@ export default function AddBook() {
   const handleDetectBooks = async () => {
     if (!selectedImage) return;
 
-    let pollInterval: NodeJS.Timeout | null = null;
+    let pollInterval: number | null = null;
 
     try {
       setDetecting(true);
@@ -407,23 +408,41 @@ export default function AddBook() {
             setProgress(100);
 
             if (job.result.books && job.result.books.length > 0) {
-              const booksWithSelection = job.result.books.map((book: DetectedBook, index: number) => ({
+              // Sort books: not owned first, then by confidence, owned books at the end
+              const sortedBooks = [...job.result.books].sort((a: DetectedBook, b: DetectedBook) => {
+                // Already owned books go to the end
+                if (a.alreadyOwned && !b.alreadyOwned) return 1;
+                if (!a.alreadyOwned && b.alreadyOwned) return -1;
+                
+                // Within same ownership status, sort by confidence
+                const confidenceOrder = { high: 3, medium: 2, low: 1 };
+                return (confidenceOrder[b.confidence || 'low'] || 0) - (confidenceOrder[a.confidence || 'low'] || 0);
+              });
+
+              const booksWithSelection = sortedBooks.map((book: DetectedBook, index: number) => ({
                 ...book,
-                selected: book.confidence !== 'low', // Auto-select high and medium confidence books
+                // Auto-select high and medium confidence books that are NOT already owned
+                selected: book.confidence !== 'low' && !book.alreadyOwned,
                 tempId: `temp-${Date.now()}-${index}`,
                 expanded: false,
-                source: 'ai',
+                source: 'ai' as const,
               }));
               setDetectedBooks(booksWithSelection);
 
-              const highCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'high').length;
-              const mediumCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'medium').length;
-              const lowCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'low').length;
+              const highCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'high' && !b.alreadyOwned).length;
+              const mediumCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'medium' && !b.alreadyOwned).length;
+              const lowCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'low' && !b.alreadyOwned).length;
+              const ownedCount = booksWithSelection.filter((b: DetectedBook) => b.alreadyOwned).length;
 
-              setSuccessMessage(
-                `זוהו ${job.result.count} ספרים בתמונה! ` +
-                `${highCount} בדיוק גבוה, ${mediumCount} בדיוק בינוני, ${lowCount} בדיוק נמוך`
-              );
+              let message = `זוהו ${job.result.count} ספרים בתמונה! `;
+              if (highCount || mediumCount || lowCount) {
+                message += `${highCount} בדיוק גבוה, ${mediumCount} בדיוק בינוני, ${lowCount} בדיוק נמוך`;
+              }
+              if (ownedCount) {
+                message += ownedCount > 0 ? `. ${ownedCount} כבר קיימים בספריה` : '';
+              }
+
+              setSuccessMessage(message);
               setSuccess(true);
               setStatusMessage('');
             } else {
@@ -582,7 +601,11 @@ export default function AddBook() {
   };
 
   const handleSelectAll = () => {
-    setDetectedBooks(prevBooks => prevBooks.map(book => ({ ...book, selected: true })));
+    // Select all books that are not already owned
+    setDetectedBooks(prevBooks => prevBooks.map(book => ({ 
+      ...book, 
+      selected: !book.alreadyOwned 
+    })));
   };
 
   const handleDeselectAll = () => {
@@ -625,36 +648,76 @@ export default function AddBook() {
         },
       });
 
-      if (data.errors && data.errors.length > 0) {
-        setBulkErrors(
-          data.errors.map((item: any, index: number) => ({
-            title: item.book?.title || `ספר ${index + 1}`,
-            message: item.error,
-          }))
-        );
+      // Build comprehensive result summary
+      const added = data.added || 0;
+      const skipped = data.skipped || 0;
+      const failed = data.failed || 0;
+
+      // Prepare error details
+      const errorDetails: { title: string; message: string }[] = [];
+      
+      // Add skipped books (not errors, just info)
+      if (data.skippedBooks && data.skippedBooks.length > 0) {
+        data.skippedBooks.forEach((item: any) => {
+          errorDetails.push({
+            title: `${item.title} (${item.author || 'לא ידוע'})`,
+            message: item.message || 'הספר כבר קיים בספרייה'
+          });
+        });
       }
 
-      // Only navigate if completely successful with no errors
-      const hasErrors = data.errors && data.errors.length > 0;
-      const hasSuccess = data.added > 0;
+      // Add actual errors
+      if (data.errors && data.errors.length > 0) {
+        data.errors.forEach((item: any, index: number) => {
+          errorDetails.push({
+            title: item.book?.title || `ספר ${index + 1}`,
+            message: item.error
+          });
+        });
+      }
 
-      if (hasSuccess && !hasErrors) {
-        // Complete success - navigate away
-        setSuccessMessage(`נוספו בהצלחה ${data.added} ספרים לקטלוג!`);
+      setBulkErrors(errorDetails);
+
+      // Build success message
+      let resultMessage = '';
+      if (added > 0) {
+        resultMessage += `✓ נוספו ${added} ספרים בהצלחה`;
+      }
+      if (skipped > 0) {
+        if (resultMessage) resultMessage += '\n';
+        resultMessage += `⊘ ${skipped} ספרים דולגו (כבר קיימים)`;
+      }
+      if (failed > 0) {
+        if (resultMessage) resultMessage += '\n';
+        resultMessage += `✗ ${failed} ספרים נכשלו`;
+      }
+
+      // Determine success state
+      if (added > 0 && failed === 0) {
+        // Complete or partial success (with skips only)
+        setSuccessMessage(resultMessage);
         setSuccess(true);
-        setDetectedBooks([]);
-        setSelectedImage(null);
-        setTimeout(() => {
-          navigate('/books');
-        }, 2000);
-      } else if (hasSuccess && hasErrors) {
-        // Partial success - show message but stay on page
-        setSuccessMessage(`נוספו ${data.added} ספרים, אך היו ${data.errors.length} שגיאות. תקן והוסף שוב.`);
+        
+        if (skipped === 0) {
+          // Perfect success - navigate away
+          setDetectedBooks([]);
+          setSelectedImage(null);
+          setTimeout(() => {
+            navigate('/books');
+          }, 2000);
+        }
+        // If there were skips, stay on page to show details
+      } else if (added === 0 && failed > 0) {
+        // All failed
+        setError(`נכשלו כל ${failed} הספרים. בדוק את השגיאות למטה.`);
+      } else if (added > 0 && failed > 0) {
+        // Mixed results
+        setSuccessMessage(resultMessage);
         setSuccess(true);
+        setError(`יש ${failed} שגיאות. בדוק את הפרטים למטה.`);
       } else {
-        // No success - show error
-        const firstError = data.errors?.[0]?.error;
-        setError(firstError ? firstError : 'לא נוספו ספרים. בדוק את השגיאות.');
+        // No books processed
+        setError('לא נוספו ספרים');
       }
     } catch (err: any) {
       console.error('Bulk add error:', err);
@@ -841,9 +904,16 @@ export default function AddBook() {
           {detectedBooks.length > 0 && (
             <Paper sx={{ p: 3 }}>
               <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6">
-                  ספרים שזוהו ({detectedBooks.filter(b => b.selected).length}/{detectedBooks.length})
-                </Typography>
+                <Box>
+                  <Typography variant="h6">
+                    ספרים שזוהו ({detectedBooks.filter(b => b.selected).length}/{detectedBooks.length})
+                  </Typography>
+                  {detectedBooks.some(b => b.alreadyOwned) && (
+                    <Typography variant="caption" color="text.secondary">
+                      {detectedBooks.filter(b => b.alreadyOwned).length} ספרים כבר קיימים בספרייה (מוצגים בסוף הרשימה)
+                    </Typography>
+                  )}
+                </Box>
                 <Box>
                   <Button size="small" onClick={handleSelectAll} sx={{ mr: 1 }}>
                     בחר הכל
@@ -861,10 +931,16 @@ export default function AddBook() {
                     variant="outlined"
                     sx={{
                       p: 2,
-                      opacity: book.selected ? 1 : 0.5,
+                      opacity: book.alreadyOwned ? 0.6 : book.selected ? 1 : 0.5,
                       border: book.selected ? 2 : 1,
                       borderColor: book.selected ? 'primary.main' : 'divider',
-                      bgcolor: book.confidence === 'high' ? 'success.50' : book.confidence === 'medium' ? 'warning.50' : 'grey.50',
+                      bgcolor: book.alreadyOwned 
+                        ? '#f5f5f5'
+                        : book.confidence === 'high' 
+                          ? 'success.50' 
+                          : book.confidence === 'medium' 
+                            ? 'warning.50' 
+                            : 'grey.50',
                     }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
@@ -872,10 +948,26 @@ export default function AddBook() {
                         checked={book.selected}
                         onChange={() => handleToggleBook(book.tempId!)}
                         sx={{ mt: 0.5 }}
+                        disabled={book.alreadyOwned}
                       />
                       <Box sx={{ flexGrow: 1 }}>
-                        {/* Header with title, author, and confidence badge */}
+                        {/* Header with title, author, confidence badge, and owned status */}
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
+                          {book.alreadyOwned && (
+                            <Box
+                              sx={{
+                                px: 1,
+                                py: 0.5,
+                                borderRadius: 1,
+                                bgcolor: 'grey.600',
+                                color: 'white',
+                                fontSize: '0.75rem',
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              כבר קיים
+                            </Box>
+                          )}
                           <Box
                             sx={{
                               px: 1,

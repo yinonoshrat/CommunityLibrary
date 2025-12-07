@@ -856,6 +856,163 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
 
   console.log(`[detectBooksFromImage] ✓ Created detection job: ${job.id}`);
 
+  // Check if we should run locally or use edge function
+  const runLocally = process.env.RUN_DETECTION_LOCALLY === 'true';
+  
+  if (runLocally) {
+    console.log('[detectBooksFromImage] Running detection LOCALLY (RUN_DETECTION_LOCALLY=true)');
+    
+    // Run detection in the same process (async, don't wait)
+    (async () => {
+      try {
+        console.log(`[detectBooksFromImage] Starting local detection for job: ${job.id}`);
+        
+        // Update progress to 10%
+        await supabase
+          .from('detection_jobs')
+          .update({ progress: 10, updated_at: new Date().toISOString() })
+          .eq('id', job.id);
+
+        // Detect books using AI (50% progress)
+        const detectedBooks = await aiVisionService.detectBooksFromImage(Buffer.from(imageBase64, 'base64'));
+        console.log(`[detectBooksFromImage] Detected ${detectedBooks.length} books locally`);
+        
+        await supabase
+          .from('detection_jobs')
+          .update({ progress: 50, updated_at: new Date().toISOString() })
+          .eq('id', job.id);
+
+        // Search for book details (90% progress)
+        const { searchBookDetails } = await import('../services/bookSearch.js');
+        const bookSearchPromises = detectedBooks.map(async (book) => {
+          try {
+            const bookDetails = await searchBookDetails(book.title, book.author);
+            if (bookDetails && bookDetails.confidence >= 70) {
+              return { ...book, ...bookDetails };
+            }
+            return book;
+          } catch (err) {
+            console.error(`[detectBooksFromImage] Search failed for ${book.title}:`, err.message);
+            return book;
+          }
+        });
+
+        const enrichedBooks = await Promise.all(bookSearchPromises);
+        
+        await supabase
+          .from('detection_jobs')
+          .update({ progress: 80, updated_at: new Date().toISOString() })
+          .eq('id', job.id);
+
+        // Check ownership status
+        console.log(`[detectBooksFromImage] Checking ownership for user ${req.user.id}...`);
+        
+        // Initialize all books with alreadyOwned: false
+        enrichedBooks.forEach(book => {
+          book.alreadyOwned = false;
+        });
+
+        try {
+          // Get user's family
+          const { data: familyData, error: familyError } = await supabase
+            .from('users')
+            .select('family_id')
+            .eq('id', req.user.id)
+            .single();
+
+          if (familyError) {
+            console.log(`[detectBooksFromImage] User lookup warning: ${familyError.message} - skipping ownership check`);
+          } else if (familyData?.family_id) {
+            // Get all books in user's family catalog
+            const { data: ownedBooks, error: ownedError } = await supabase
+              .from('family_books')
+              .select(`
+                book_catalog_id,
+                book_catalog (
+                  title,
+                  author,
+                  series
+                )
+              `)
+              .eq('family_id', familyData.family_id);
+
+            if (ownedError) {
+              console.log(`[detectBooksFromImage] Owned books lookup warning: ${ownedError.message} - skipping ownership check`);
+            } else if (ownedBooks) {
+              // Create a set of owned book keys for quick lookup
+              const ownedKeys = new Set();
+              for (const owned of ownedBooks) {
+                const bookData = owned.book_catalog;
+                if (bookData) {
+                  const series = (bookData.series || '').toLowerCase().trim();
+                  const key = `${bookData.title.toLowerCase().trim()}|${(bookData.author || '').toLowerCase().trim()}|${series}`;
+                  ownedKeys.add(key);
+                }
+              }
+
+              // Mark books as already owned
+              for (const book of enrichedBooks) {
+                const series = (book.series || '').toLowerCase().trim();
+                const key = `${book.title.toLowerCase().trim()}|${(book.author || '').toLowerCase().trim()}|${series}`;
+                book.alreadyOwned = ownedKeys.has(key);
+              }
+
+              console.log(`[detectBooksFromImage] Found ${ownedKeys.size} books in catalog, marked ${enrichedBooks.filter(b => b.alreadyOwned).length} as already owned`);
+            }
+          }
+        } catch (ownershipError) {
+          console.error(`[detectBooksFromImage] Ownership check failed: ${ownershipError.message} - continuing without ownership data`);
+          // Continue without ownership data - all books will have alreadyOwned: false
+        }
+
+        await supabase
+          .from('detection_jobs')
+          .update({ progress: 90, updated_at: new Date().toISOString() })
+          .eq('id', job.id);
+
+        // Update job with results (100% complete)
+        const { error: updateError } = await supabase
+          .from('detection_jobs')
+          .update({
+            status: 'completed',
+            progress: 100,
+            result: {
+              books: enrichedBooks,
+              count: enrichedBooks.length
+            },
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+
+        if (updateError) {
+          console.error(`[detectBooksFromImage] Failed to update job ${job.id}:`, updateError);
+        } else {
+          console.log(`[detectBooksFromImage] ✓ Local detection completed for job: ${job.id}`);
+        }
+
+      } catch (error) {
+        console.error(`[detectBooksFromImage] ✗ Local detection failed for job ${job.id}:`, error);
+        await supabase
+          .from('detection_jobs')
+          .update({
+            status: 'failed',
+            error: error.message,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+      }
+    })();
+
+    // Return immediately
+    console.log('[detectBooksFromImage] ✓ Local detection started, returning jobId to client');
+    return res.json({
+      jobId: job.id,
+      status: 'processing',
+      progress: 0,
+      message: 'Detection started locally. Poll /api/books/detect-job/:jobId for status.'
+    });
+  }
+
   // Trigger Supabase Edge Function (async - don't wait for response)
   const edgeFunctionUrl = process.env.SUPABASE_EDGE_FUNCTION_URL;
   
@@ -1169,19 +1326,47 @@ export const bulkAddBooks = asyncHandler(async (req, res) => {
         skippedBooks.push({
           title: data.title,
           author: data.author,
-          reason: 'already_owned'
+          reason: 'already_owned',
+          message: 'הספר כבר קיים בספרייה שלך'
         });
       } else {
         addedBooks.push(data);
       }
     } else {
       console.error('Book processing error:', result.reason);
+      
+      // Parse error message for better user feedback
+      let errorMessage = result.reason?.message || 'Unknown error';
+      
+      // Check for duplicate constraint error
+      if (errorMessage.includes('duplicate key value violates unique constraint')) {
+        if (errorMessage.includes('family_books_family_id_book_catalog_id_key')) {
+          errorMessage = 'הספר כבר קיים בספרייה שלך';
+          // This is actually a skip, not an error
+          skippedBooks.push({
+            title: originalBook.title,
+            author: originalBook.author || 'לא ידוע',
+            reason: 'already_owned',
+            message: errorMessage
+          });
+          continue; // Don't add to errors
+        } else if (errorMessage.includes('books_catalog_title_author_key')) {
+          errorMessage = 'הספר כבר קיים בקטלוג המשותף';
+        }
+      } else if (errorMessage.includes('violates foreign key constraint')) {
+        errorMessage = 'שגיאת מסד נתונים - משפחה לא נמצאה';
+      } else if (errorMessage.includes('violates not-null constraint')) {
+        errorMessage = 'חסרים שדות חובה (כותרת)';
+      }
+      
       errors.push({
         book: originalBook,
-        error: result.reason?.message || 'Unknown error'
+        error: errorMessage
       });
     }
   }
+
+  console.log(`[bulkAddBooks] Summary: ${addedBooks.length} added, ${skippedBooks.length} skipped, ${errors.length} failed`);
 
   res.json({
     success: true,

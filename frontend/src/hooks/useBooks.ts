@@ -130,7 +130,7 @@ function filterBooksFromCache(
   if (filters.status === 'available') {
     filtered = filtered.filter(book => (book.stats?.availableCopies || 0) > 0);
   } else if (filters.status === 'on_loan') {
-    filtered = filtered.filter(book => (book.stats?.loanedCopies || 0) > 0);
+    filtered = filtered.filter(book => (book.stats?.onLoanCopies || 0) > 0);
   }
   
   // Filter by genre
@@ -140,14 +140,15 @@ function filterBooksFromCache(
   
   // Filter by age level
   if (filters.ageLevel && filters.ageLevel !== 'all') {
-    filtered = filtered.filter(book => book.ageLevel === filters.ageLevel);
+    filtered = filtered.filter(book => book.ageRange === filters.ageLevel);
   }
   
   // Sort books
   if (filters.sortBy === 'author') {
     filtered.sort((a, b) => (a.authorHebrew || a.author || '').localeCompare(b.authorHebrew || b.author || ''));
   } else if (filters.sortBy === 'updated') {
-    filtered.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+    // CatalogBook doesn't have updated_at, sort by title instead
+    filtered.sort((a, b) => (a.titleHebrew || a.title || '').localeCompare(b.titleHebrew || b.title || ''));
   } else {
     // Default: sort by title
     filtered.sort((a, b) => (a.titleHebrew || a.title || '').localeCompare(b.titleHebrew || b.title || ''));
