@@ -152,6 +152,7 @@ export default function AddBook() {
   const [detectedBooks, setDetectedBooks] = useState<DetectedBook[]>([]);
   const [adding, setAdding] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
   const [zoomDialogOpen, setZoomDialogOpen] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [refreshingBooks, setRefreshingBooks] = useState<Set<string>>(new Set());
@@ -371,62 +372,98 @@ export default function AddBook() {
   const handleDetectBooks = async () => {
     if (!selectedImage) return;
 
+    let pollInterval: NodeJS.Timeout | null = null;
+
     try {
-      // Create new abort controller for this request
-      const controller = new AbortController();
-      setAbortController(controller);
-      
       setDetecting(true);
       setError(null);
-      setProgress(20);
+      setProgress(10);
+      setStatusMessage('מעלה תמונה...');
 
       const formData = new FormData();
       formData.append('image', selectedImage);
 
-      setProgress(40);
-
+      // Start detection job (returns immediately with jobId)
       const data = await apiCall('/api/books/detect-from-image', {
         method: 'POST',
         body: formData,
-        signal: controller.signal,
       });
 
-      setProgress(100);
+      const jobId = data.jobId;
+      setProgress(20);
+      setStatusMessage('מזהה ספרים עם בינה מלאכותית...');
 
-      if (data.books && data.books.length > 0) {
-        const booksWithSelection = data.books.map((book: DetectedBook, index: number) => ({
-          ...book,
-          selected: book.confidence !== 'low', // Auto-select high and medium confidence books
-          tempId: `temp-${Date.now()}-${index}`,
-          expanded: false,
-          source: 'ai',
-        }));
-        setDetectedBooks(booksWithSelection);
-        
-        const highCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'high').length;
-        const mediumCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'medium').length;
-        const lowCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'low').length;
-        
-        setSuccessMessage(
-          `זוהו ${data.count} ספרים בתמונה! ` +
-          `${highCount} בדיוק גבוה, ${mediumCount} בדיוק בינוני, ${lowCount} בדיוק נמוך`
-        );
-        setSuccess(true);
-      } else {
-        setError('לא זוהו ספרים בתמונה. נסה תמונה אחרת או הוסף ספרים ידנית.');
-      }
+      // Poll for job completion
+      pollInterval = setInterval(async () => {
+        try {
+          const job = await apiCall(`/api/books/detect-job/${jobId}`, {
+            method: 'GET',
+          });
+
+          setProgress(job.progress || 20);
+
+          if (job.status === 'completed' && job.result) {
+            if (pollInterval) clearInterval(pollInterval);
+            setProgress(100);
+
+            if (job.result.books && job.result.books.length > 0) {
+              const booksWithSelection = job.result.books.map((book: DetectedBook, index: number) => ({
+                ...book,
+                selected: book.confidence !== 'low', // Auto-select high and medium confidence books
+                tempId: `temp-${Date.now()}-${index}`,
+                expanded: false,
+                source: 'ai',
+              }));
+              setDetectedBooks(booksWithSelection);
+
+              const highCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'high').length;
+              const mediumCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'medium').length;
+              const lowCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'low').length;
+
+              setSuccessMessage(
+                `זוהו ${job.result.count} ספרים בתמונה! ` +
+                `${highCount} בדיוק גבוה, ${mediumCount} בדיוק בינוני, ${lowCount} בדיוק נמוך`
+              );
+              setSuccess(true);
+              setStatusMessage('');
+            } else {
+              setError('לא זוהו ספרים בתמונה. נסה תמונה אחרת או הוסף ספרים ידנית.');
+              setStatusMessage('');
+            }
+            setDetecting(false);
+          } else if (job.status === 'failed') {
+            if (pollInterval) clearInterval(pollInterval);
+            setError(job.error || 'שגיאה בזיהוי ספרים מהתמונה');
+            setDetecting(false);
+            setProgress(0);
+            setStatusMessage('');
+          } else {
+            // Still processing - update status message
+            if (job.progress < 50) {
+              setStatusMessage('מזהה ספרים עם בינה מלאכותית...');
+            } else if (job.progress < 90) {
+              setStatusMessage('מחפש פרטים נוספים באינטרנט...');
+            } else {
+              setStatusMessage('כמעט סיימנו...');
+            }
+          }
+        } catch (pollError: any) {
+          console.error('Polling error:', pollError);
+          if (pollInterval) clearInterval(pollInterval);
+          setError('שגיאה בבדיקת סטטוס. נסה שוב.');
+          setDetecting(false);
+          setProgress(0);
+          setStatusMessage('');
+        }
+      }, 2000); // Poll every 2 seconds
+
     } catch (err: any) {
-      // Ignore abort errors
-      if (err.name === 'AbortError') {
-        console.log('Detection cancelled by user');
-        return;
-      }
       console.error('Detection error:', err);
+      if (pollInterval) clearInterval(pollInterval);
       setError(err.message || 'שגיאה בזיהוי ספרים מהתמונה');
-    } finally {
       setDetecting(false);
       setProgress(0);
-      setAbortController(null);
+      setStatusMessage('');
     }
   };
 
@@ -776,9 +813,12 @@ export default function AddBook() {
               {detecting && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
-                    מזהה ספרים...
+                    {statusMessage || 'מזהה ספרים...'}
                   </Typography>
                   <LinearProgress variant="determinate" value={progress} />
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                    {progress}% הושלם
+                  </Typography>
                 </Box>
               )}
 

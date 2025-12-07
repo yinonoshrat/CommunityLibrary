@@ -1,0 +1,327 @@
+// Supabase Edge Function for async book detection from images
+// This function runs with 150s timeout (vs 60s for Vercel)
+// Deploy: npx supabase functions deploy detect-books --project-ref <project-ref>
+
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+// ============================================================================
+// Gemini Vision Service (shared with backend)
+// ============================================================================
+class GeminiVisionService {
+  private apiKey: string;
+  private modelName: string;
+
+  constructor(apiKey: string, modelName = 'gemini-2.0-flash-exp') {
+    this.apiKey = apiKey;
+    this.modelName = modelName;
+  }
+
+  async detectBooksFromImage(imageBase64: string): Promise<any[]> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent?key=${this.apiKey}`;
+    
+    const prompt = `
+Analyze this image of a bookshelf and extract all visible book titles and authors.
+Return the results as a JSON array with the following structure:
+[
+  { "title": "Book Title", "author": "Author Name" },
+  { "title": "Another Book", "author": "Another Author" }
+]
+
+IMPORTANT RULES:
+- Only include books where the title is clearly readable
+- Include author name if visible on the spine or cover
+- If author is not visible, use empty string ""
+- Return valid JSON only, no additional text or markdown formatting
+- Support both Hebrew and English titles
+- If you see a series name and number (e.g., "Harry Potter 1"), include the number in the title
+- Do not include duplicate books
+- If you cannot read any books clearly, return an empty array []
+`;
+    
+    const payload = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.2,
+        topK: 32,
+        topP: 1,
+        maxOutputTokens: 4096,
+      }
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    
+    // Extract JSON from markdown code blocks if present
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/```\s*([\s\S]*?)```/);
+    const jsonText = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    
+    const booksData = JSON.parse(jsonText);
+    
+    // Validate and clean the data
+    return booksData
+      .filter((book: any) => book.title && typeof book.title === 'string')
+      .map((book: any) => ({
+        title: book.title.trim(),
+        author: book.author ? book.author.trim() : ''
+      }));
+  }
+}
+
+// ============================================================================
+// Book Search Service (shared with backend - Simania API)
+// ============================================================================
+const SIMANIA_API = 'https://simania.co.il/api/search';
+
+async function searchBookDetails(title: string, author?: string) {
+  try {
+    const query = author ? `${title} ${author}` : title;
+    const url = `${SIMANIA_API}?query=${encodeURIComponent(query)}&page=1`;
+    
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    
+    const data = await response.json();
+    if (!data.success || !data.data?.books || data.data.books.length === 0) {
+      return null;
+    }
+    
+    const book = data.data.books[0]; // Best match from Simania
+    
+    // Process cover image URL
+    let coverImageUrl = null;
+    if (book.COVER) {
+      coverImageUrl = book.COVER;
+    } else if (book.imageLink) {
+      const imagePath = book.imageLink;
+      if (imagePath.includes('loadJpg.php')) {
+        const match = imagePath.match(/[?&]imageName=([^&]+)/);
+        coverImageUrl = match ? `https://simania.co.il/bookimages/${match[1]}` : `https://simania.co.il${imagePath}`;
+      } else {
+        coverImageUrl = `https://simania.co.il${imagePath}`;
+      }
+    }
+    
+    return {
+      title: book.NAME || title,
+      author: book.AUTHOR || author || '',
+      publisher: book.PUBLISHER || null,
+      publish_year: book.YEAR || book.bookYear || null,
+      pages: book.PAGES || null,
+      description: book.DESCRIPTION || null,
+      cover_image_url: coverImageUrl,
+      isbn: book.ISBN || null,
+      genre: book.CATEGORY || null,
+      series: book.SERIES || null,
+      series_number: book.seriesNumber ? parseSeriesNumber(book.seriesNumber) : null,
+      language: 'he',
+      confidence: 85
+    };
+  } catch (error) {
+    console.error(`Search error for "${title}":`, error);
+    return null;
+  }
+}
+
+function parseSeriesNumber(value: any): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const match = String(value).match(/\d+/);
+  if (match) {
+    const num = Number(match[0]);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+}
+
+// ============================================================================
+// Edge Function Handler
+// ============================================================================
+Deno.serve(async (req: Request) => {
+  try {
+    // Parse request
+    const { jobId, imageData } = await req.json();
+    
+    if (!jobId || !imageData) {
+      return new Response(JSON.stringify({ error: 'Missing jobId or imageData' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`Processing detection job: ${jobId}`);
+
+    // Initialize Supabase client with service role
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')!;
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Update job status to processing
+    await supabase
+      .from('detection_jobs')
+      .update({ status: 'processing', progress: 10, updated_at: new Date().toISOString() })
+      .eq('id', jobId);
+
+    console.log(`Detecting books with Gemini...`);
+
+    // Detect books using Gemini (Step 1: AI Detection)
+    const gemini = new GeminiVisionService(geminiApiKey);
+    const detectedBooks = await gemini.detectBooksFromImage(imageData);
+
+    console.log(`Detected ${detectedBooks.length} books`);
+
+    await supabase
+      .from('detection_jobs')
+      .update({ progress: 50, updated_at: new Date().toISOString() })
+      .eq('id', jobId);
+
+    console.log(`Enriching with Simania search...`);
+
+    // Search for book details in parallel (Step 2: Online Enrichment)
+    const enrichedBooks = await Promise.all(
+      detectedBooks.map(async (book: any) => {
+        try {
+          const details = await searchBookDetails(book.title, book.author);
+          
+          if (details && details.confidence >= 70) {
+            // High confidence - use online data
+            return { ...book, ...details, confidence: 'high' as const, confidenceScore: details.confidence };
+          } else if (details && details.confidence >= 40) {
+            // Medium confidence - merge
+            return {
+              title: book.title,
+              author: book.author || details.author,
+              publisher: details.publisher,
+              publish_year: details.publish_year,
+              pages: details.pages,
+              description: details.description,
+              cover_image_url: details.cover_image_url,
+              isbn: details.isbn,
+              genre: details.genre,
+              language: details.language,
+              series: details.series,
+              series_number: details.series_number,
+              confidence: 'medium' as const,
+              confidenceScore: details.confidence
+            };
+          }
+          
+          // Low confidence - keep AI data only
+          return { ...book, confidence: 'low' as const, confidenceScore: 0 };
+        } catch (err) {
+          console.error(`Enrichment error for "${book.title}":`, err);
+          return { ...book, confidence: 'low' as const, confidenceScore: 0 };
+        }
+      })
+    );
+
+    await supabase
+      .from('detection_jobs')
+      .update({ progress: 90, updated_at: new Date().toISOString() })
+      .eq('id', jobId);
+
+    // Deduplicate books (same logic as backend)
+    const uniqueBooks: any[] = [];
+    const seen = new Set<string>();
+    
+    for (const book of enrichedBooks) {
+      const series = (book.series || '').toLowerCase().trim();
+      const seriesNum = book.series_number != null ? String(book.series_number) : '';
+      const key = `${book.title.toLowerCase().trim()}|${(book.author || '').toLowerCase().trim()}|${series}|${seriesNum}`;
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueBooks.push(book);
+      }
+    }
+
+    // Sort by confidence
+    const sortedBooks = uniqueBooks.sort((a, b) => {
+      const confidenceOrder = { high: 3, medium: 2, low: 1 };
+      const orderDiff = confidenceOrder[b.confidence] - confidenceOrder[a.confidence];
+      if (orderDiff !== 0) return orderDiff;
+      return b.confidenceScore - a.confidenceScore;
+    });
+
+    console.log(`Final result: ${sortedBooks.length} unique books`);
+    console.log(`  High: ${sortedBooks.filter(b => b.confidence === 'high').length}`);
+    console.log(`  Medium: ${sortedBooks.filter(b => b.confidence === 'medium').length}`);
+    console.log(`  Low: ${sortedBooks.filter(b => b.confidence === 'low').length}`);
+
+    // Update job with results
+    const { error: updateError } = await supabase
+      .from('detection_jobs')
+      .update({
+        status: 'completed',
+        progress: 100,
+        result: { books: sortedBooks, count: sortedBooks.length },
+        image_data: null, // Clear image data after processing
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+
+    if (updateError) {
+      console.error('Failed to update job:', updateError);
+      throw updateError;
+    }
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      count: sortedBooks.length,
+      jobId 
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+  } catch (error: any) {
+    console.error('Edge function error:', error);
+    
+    // Try to update job status to failed
+    try {
+      const body = await req.clone().json();
+      const jobId = body.jobId;
+      
+      if (jobId) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        
+        await supabase
+          .from('detection_jobs')
+          .update({
+            status: 'failed',
+            error: error.message || 'Unknown error',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', jobId);
+      }
+    } catch (e) {
+      console.error('Failed to update job status:', e);
+    }
+
+    return new Response(JSON.stringify({ 
+      error: error.message || 'Unknown error' 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+});

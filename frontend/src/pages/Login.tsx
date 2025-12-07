@@ -99,7 +99,7 @@ export default function Login() {
     setLoading(true)
 
     try {
-      const response = await apiCall('/auth/accounts-by-email', {
+      const response = await apiCall('/api/auth/accounts-by-email', {
         method: 'POST',
         body: JSON.stringify({ email }),
       })
@@ -138,7 +138,7 @@ export default function Login() {
     setLoading(true)
 
     try {
-      const response = await apiCall('/auth/login', {
+      const response = await apiCall('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({
           email,

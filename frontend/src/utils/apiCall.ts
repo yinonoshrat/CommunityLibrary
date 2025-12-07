@@ -29,6 +29,12 @@ export async function apiCall<T = any>(
         // If response is not JSON, use status text
         errorMessage = response.statusText || errorMessage;
       }
+      
+      // Provide helpful message for authentication errors
+      if (response.status === 401) {
+        throw new Error('נדרשת התחברות - אנא התחבר כדי להשתמש בתכונה זו');
+      }
+      
       throw new Error(errorMessage);
     }
 

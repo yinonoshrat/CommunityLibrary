@@ -13,6 +13,7 @@ import {
   getBookLikes,
   toggleBookLike,
   detectBooksFromImage,
+  getDetectionJob,
   bulkAddBooks,
 } from '../controllers/books.controller.js';
 import { extractUserFromToken, requireAuth } from '../middleware/auth.middleware.js';
@@ -55,8 +56,9 @@ router.post('/:bookId/reviews', createBookReview);
 router.get('/:bookId/likes', getBookLikes);
 router.post('/:bookId/likes', toggleBookLike);
 
-// Bulk upload routes
+// Bulk upload routes (async detection with polling)
 router.post('/detect-from-image', requireAuth, upload.single('image'), detectBooksFromImage);
+router.get('/detect-job/:jobId', requireAuth, getDetectionJob);
 router.post('/bulk-add', requireAuth, bulkAddBooks);
 
 export default router;

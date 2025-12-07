@@ -800,13 +800,12 @@ export const toggleBookLike = asyncHandler(async (req, res) => {
 });
 
 /**
- * Detect books from uploaded image using AI
+ * Detect books from uploaded image using AI (ASYNC with Supabase Edge Function)
  * @route POST /api/books/detect-from-image
  */
 export const detectBooksFromImage = asyncHandler(async (req, res) => {
-  console.log('=== DETECT FROM IMAGE REQUEST ===');
-  console.log('Has GEMINI_API_KEY:', !!process.env.GEMINI_API_KEY);
-  console.log('aiVisionService initialized:', !!aiVisionService);
+  console.log('=== ASYNC DETECT FROM IMAGE REQUEST ===');
+  console.log('User ID:', req.user?.id);
   console.log('Request file:', req.file ? {
     fieldname: req.file.fieldname,
     originalname: req.file.originalname,
@@ -814,29 +813,161 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
     size: req.file.size
   } : 'NO FILE');
 
-  // Check if AI service is available
-  if (!aiVisionService) {
-    console.error('AI service not initialized. Check GEMINI_API_KEY environment variable.');
-    return res.status(503).json({
-      error: 'AI vision service not configured',
-      message: 'GEMINI_API_KEY environment variable is missing'
-    });
-  }
-
   // Check if image was uploaded
   if (!req.file) {
     console.error('No image file in request');
     return res.status(400).json({ error: 'No image provided' });
   }
 
-  // Validate file is an image (in case fileFilter passed it through)
+  // Validate file is an image
   if (!req.file.mimetype.startsWith('image/')) {
     console.error('Non-image file rejected:', req.file.mimetype);
     return res.status(400).json({ error: 'Only image files are allowed' });
   }
 
+  // Validate user authentication
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ error: 'User not authenticated' });
+  }
+
   console.log(`Processing image: ${req.file.originalname}, size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
 
+  // Convert image buffer to base64
+  const imageBase64 = req.file.buffer.toString('base64');
+
+  // Create job in database
+  const { supabase } = await import('../db/adapter.js');
+  const { data: job, error: jobError } = await supabase
+    .from('detection_jobs')
+    .insert({
+      user_id: req.user.id,
+      status: 'processing',
+      image_data: imageBase64,
+      progress: 0
+    })
+    .select()
+    .single();
+
+  if (jobError) {
+    console.error('[detectBooksFromImage] Failed to create detection job:', jobError);
+    console.error('[detectBooksFromImage] Error details:', JSON.stringify(jobError, null, 2));
+    return res.status(500).json({ error: 'Failed to create detection job' });
+  }
+
+  console.log(`[detectBooksFromImage] ✓ Created detection job: ${job.id}`);
+
+  // Trigger Supabase Edge Function (async - don't wait for response)
+  const edgeFunctionUrl = process.env.SUPABASE_EDGE_FUNCTION_URL;
+  
+  if (!edgeFunctionUrl) {
+    console.error('[detectBooksFromImage] ✗ SUPABASE_EDGE_FUNCTION_URL not configured');
+    console.error('[detectBooksFromImage] Available env vars:', Object.keys(process.env).filter(k => k.includes('SUPABASE')));
+    return res.status(503).json({ 
+      error: 'Edge function not configured',
+      message: 'SUPABASE_EDGE_FUNCTION_URL environment variable is missing'
+    });
+  }
+
+  console.log(`[detectBooksFromImage] Edge function URL: ${edgeFunctionUrl}`);
+  console.log(`[detectBooksFromImage] Image base64 length: ${imageBase64.length} chars`);
+
+  // Call edge function asynchronously (fire and forget)
+  fetch(edgeFunctionUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+    },
+    body: JSON.stringify({
+      jobId: job.id,
+      imageData: imageBase64
+    })
+  })
+  .then(response => {
+    console.log(`[detectBooksFromImage] ✓ Edge function triggered, status: ${response.status}`);
+    if (!response.ok) {
+      console.error(`[detectBooksFromImage] ✗ Edge function returned error status: ${response.status}`);
+      return response.text().then(text => {
+        console.error('[detectBooksFromImage] Edge function error response:', text);
+      });
+    }
+  })
+  .catch(err => {
+    console.error('[detectBooksFromImage] ✗ Failed to trigger edge function:', err.message);
+    console.error('[detectBooksFromImage] Error stack:', err.stack);
+    // Update job status to failed
+    supabase
+      .from('detection_jobs')
+      .update({ 
+        status: 'failed', 
+        error: 'Failed to trigger processing',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', job.id)
+      .then(() => console.log(`[detectBooksFromImage] Marked job ${job.id} as failed`))
+      .catch(e => console.error('[detectBooksFromImage] Failed to update job:', e));
+  });
+
+  console.log(`[detectBooksFromImage] ✓ Triggered edge function for job: ${job.id}`);
+  console.log(`[detectBooksFromImage] ✓ Returning jobId to client, client should poll /api/books/detect-job/${job.id}`);
+
+  // Return immediately with jobId
+  res.json({
+    jobId: job.id,
+    status: 'processing',
+    progress: 0,
+    message: 'Detection started. Poll /api/books/detect-job/:jobId for status.'
+  });
+});
+
+/**
+ * Get detection job status
+ * @route GET /api/books/detect-job/:jobId
+ */
+export const getDetectionJob = asyncHandler(async (req, res) => {
+  const { jobId } = req.params;
+
+  console.log(`[getDetectionJob] === POLLING REQUEST ===`);
+  console.log(`[getDetectionJob] Job ID: ${jobId}`);
+  console.log(`[getDetectionJob] User ID: ${req.user?.id}`);
+
+  // Validate user authentication
+  if (!req.user || !req.user.id) {
+    console.error('[getDetectionJob] ✗ User not authenticated');
+    return res.status(401).json({ error: 'User not authenticated' });
+  }
+
+  const { supabase } = await import('../db/adapter.js');
+  const { data: job, error } = await supabase
+    .from('detection_jobs')
+    .select('id, status, progress, result, error, created_at, updated_at')
+    .eq('id', jobId)
+    .eq('user_id', req.user.id)
+    .single();
+
+  if (error || !job) {
+    console.error('[getDetectionJob] ✗ Job not found or access denied:', error?.message);
+    return res.status(404).json({ error: 'Job not found' });
+  }
+
+  console.log(`[getDetectionJob] Job status: ${job.status}, progress: ${job.progress}%`);
+  
+  if (job.status === 'completed' && job.result) {
+    const bookCount = job.result?.books?.length || 0;
+    console.log(`[getDetectionJob] ✓ Job completed with ${bookCount} books detected`);
+  } else if (job.status === 'failed') {
+    console.error(`[getDetectionJob] ✗ Job failed: ${job.error}`);
+  } else {
+    console.log(`[getDetectionJob] Job still processing...`);
+  }
+
+  res.json(job);
+});
+
+// OLD SYNCHRONOUS CODE BELOW - KEPT FOR REFERENCE/FALLBACK
+// This can be removed once async is fully tested
+/*
+const detectBooksSynchronous = async (req, res) => {
   // Detect books using AI
   const detectedBooks = await aiVisionService.detectBooksFromImage(req.file.buffer);
 
@@ -942,7 +1073,8 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
     books: sortedBooks,
     count: sortedBooks.length
   });
-});
+};
+*/
 
 /**
  * Bulk add books to catalog

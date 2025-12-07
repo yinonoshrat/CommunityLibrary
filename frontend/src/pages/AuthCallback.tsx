@@ -30,7 +30,7 @@ export default function AuthCallback() {
         if (user) {
           try {
             // Try to get user profile from our database
-            const response = await apiCall('/auth/me')
+            const response = await apiCall('/api/auth/me')
             
             if (response.user) {
               // User exists, navigate to home

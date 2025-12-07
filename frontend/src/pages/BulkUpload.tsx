@@ -52,6 +52,7 @@ export default function BulkUpload() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
 
   const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -96,38 +97,84 @@ export default function BulkUpload() {
     try {
       setDetecting(true);
       setError('');
-      setProgress(20);
+      setProgress(10);
+      setStatusMessage('מעלה תמונה...');
 
       const formData = new FormData();
       formData.append('image', selectedImage);
 
-      setProgress(40);
-
+      // Start detection job (returns immediately with jobId)
       const data = await apiCall('/api/books/detect-from-image', {
         method: 'POST',
         body: formData,
         headers: {}, // Let browser set Content-Type for FormData
       });
 
-      setProgress(100);
+      const jobId = data.jobId;
+      setProgress(20);
+      setStatusMessage('מזהה ספרים עם בינה מלאכותית...');
 
-      if (data.books && data.books.length > 0) {
-        const booksWithSelection = data.books.map((book: DetectedBook, index: number) => ({
-          ...book,
-          selected: true,
-          tempId: `temp-${Date.now()}-${index}`,
-        }));
-        setDetectedBooks(booksWithSelection);
-        setSuccess(`זוהו ${data.count} ספרים בתמונה!`);
-      } else {
-        setError('לא זוהו ספרים בתמונה. נסה תמונה אחרת או הוסף ספרים ידנית.');
-      }
+      // Poll for job completion
+      const pollInterval = setInterval(async () => {
+        try {
+          const job = await apiCall(`/api/books/detect-job/${jobId}`, {
+            method: 'GET',
+          });
+
+          setProgress(job.progress || 20);
+
+          if (job.status === 'completed' && job.result) {
+            clearInterval(pollInterval);
+            setProgress(100);
+            
+            if (job.result.books && job.result.books.length > 0) {
+              const booksWithSelection = job.result.books.map((book: DetectedBook, index: number) => ({
+                ...book,
+                selected: true,
+                tempId: `temp-${Date.now()}-${index}`,
+              }));
+              setDetectedBooks(booksWithSelection);
+              setSuccess(`זוהו ${job.result.count} ספרים בתמונה!`);
+              setStatusMessage('');
+            } else {
+              setError('לא זוהו ספרים בתמונה. נסה תמונה אחרת או הוסף ספרים ידנית.');
+            }
+            setDetecting(false);
+          } else if (job.status === 'failed') {
+            clearInterval(pollInterval);
+            setError(job.error || 'שגיאה בזיהוי ספרים מהתמונה');
+            setDetecting(false);
+            setProgress(0);
+            setStatusMessage('');
+          } else {
+            // Still processing - update status message
+            if (job.progress < 50) {
+              setStatusMessage('מזהה ספרים עם בינה מלאכותית...');
+            } else if (job.progress < 90) {
+              setStatusMessage('מחפש פרטים נוספים באינטרנט...');
+            } else {
+              setStatusMessage('כמעט סיימנו...');
+            }
+          }
+        } catch (pollError: any) {
+          console.error('Polling error:', pollError);
+          clearInterval(pollInterval);
+          setError('שגיאה בבדיקת סטטוס. נסה שוב.');
+          setDetecting(false);
+          setProgress(0);
+          setStatusMessage('');
+        }
+      }, 2000); // Poll every 2 seconds
+
+      // Cleanup interval if component unmounts
+      return () => clearInterval(pollInterval);
+
     } catch (err: any) {
       console.error('Detection error:', err);
       setError(err.message || 'שגיאה בזיהוי ספרים מהתמונה');
-    } finally {
       setDetecting(false);
       setProgress(0);
+      setStatusMessage('');
     }
   };
 
@@ -296,9 +343,12 @@ export default function BulkUpload() {
           {detecting && (
             <Box sx={{ mb: 2 }}>
               <Typography variant="body2" color="text.secondary" gutterBottom>
-                מזהה ספרים...
+                {statusMessage || 'מזהה ספרים...'}
               </Typography>
               <LinearProgress variant="determinate" value={progress} />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                {progress}% הושלם
+              </Typography>
             </Box>
           )}
 

@@ -19,6 +19,7 @@ export async function extractUserFromToken(req, res, next) {
       if (userRecord && !userRecordError) {
         req.userId = userRecord.id;
         req.familyId = userRecord.family_id;
+        req.user = { id: userRecord.id }; // Set req.user for controller compatibility
         if (userRecord.family_id) {
           req.headers['x-family-id'] = userRecord.family_id;
         }
@@ -72,6 +73,7 @@ export async function extractUserFromToken(req, res, next) {
         // Set user context for downstream handlers
         req.userId = resolvedUserId;
         req.familyId = resolvedFamilyId;
+        req.user = { id: resolvedUserId }; // Set req.user for controller compatibility
         req.headers['x-user-id'] = resolvedUserId;
         if (resolvedFamilyId) {
           req.headers['x-family-id'] = resolvedFamilyId;

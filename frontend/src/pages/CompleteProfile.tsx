@@ -118,7 +118,7 @@ export default function CompleteProfile() {
         payload.familyWhatsapp = whatsapp || phone
       }
 
-      await apiCall('/auth/oauth-complete', {
+      await apiCall('/api/auth/oauth-complete', {
         method: 'POST',
         body: JSON.stringify(payload),
       })

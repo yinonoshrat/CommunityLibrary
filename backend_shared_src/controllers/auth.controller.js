@@ -107,23 +107,38 @@ export const register = asyncHandler(async (req, res) => {
 export const getAccountsByEmail = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
+  console.log('[getAccountsByEmail] === REQUEST RECEIVED ===');
+  console.log('[getAccountsByEmail] Email:', email);
+
   if (!email) {
+    console.error('[getAccountsByEmail] ✗ No email provided');
     return res.status(400).json({ error: 'Email is required' });
   }
 
-  // Get all users with this email
-  const { data: users, error } = await supabase
-    .from('users')
-    .select('id, full_name, email, families(id, name)')
-    .eq('email', email)
-    .order('full_name');
+  try {
+    console.log('[getAccountsByEmail] Querying database...');
+    
+    // Get all users with this email
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, full_name, email, families(id, name)')
+      .eq('email', email)
+      .order('full_name');
 
-  if (error) {
-    console.error('Error fetching accounts by email:', error);
-    return res.status(500).json({ error: 'Failed to fetch accounts' });
+    if (error) {
+      console.error('[getAccountsByEmail] ✗ Database error:', error.message);
+      console.error('[getAccountsByEmail] Error code:', error.code);
+      console.error('[getAccountsByEmail] Error details:', error.details);
+      return res.status(500).json({ error: 'Failed to fetch accounts' });
+    }
+
+    console.log('[getAccountsByEmail] ✓ Found', users?.length || 0, 'accounts');
+    res.json({ accounts: users || [] });
+  } catch (err) {
+    console.error('[getAccountsByEmail] ✗ Unexpected error:', err.message);
+    console.error('[getAccountsByEmail] Stack:', err.stack);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  res.json({ accounts: users || [] });
 });
 
 /**

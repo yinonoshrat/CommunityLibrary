@@ -300,7 +300,7 @@ export default function Register() {
         existingFamilyId: family.id
       }
 
-      await apiCall('/auth/register', {
+      await apiCall('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify(payload),
       })
@@ -335,7 +335,7 @@ export default function Register() {
         payload.familyWhatsapp = whatsapp || phone
       }
 
-      await apiCall('/auth/register', {
+      await apiCall('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify(payload),
       })
