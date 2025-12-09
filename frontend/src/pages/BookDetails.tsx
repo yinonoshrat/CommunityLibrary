@@ -129,7 +129,7 @@ export default function BookDetails() {
     return (
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
         <Alert severity="error">{error || 'ספר לא נמצא'}</Alert>
-        <Button startIcon={<BackIcon />} onClick={() => navigate(-1)} sx={{ mt: 2 }}>
+        <Button startIcon={<BackIcon />} onClick={() => navigate('/books')} sx={{ mt: 2 }}>
           חזרה לספרים
         </Button>
       </Container>
@@ -138,7 +138,7 @@ export default function BookDetails() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Button startIcon={<BackIcon />} onClick={() => navigate(-1)} sx={{ mb: 3 }}>
+      <Button startIcon={<BackIcon />} onClick={() => navigate('/books')} sx={{ mb: 3 }}>
         חזרה לספרים
       </Button>
 

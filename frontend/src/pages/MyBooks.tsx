@@ -18,12 +18,14 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   IconButton,
+  Menu,
 } from '@mui/material'
 import {
   Add as AddIcon,
   Search as SearchIcon,
   Refresh as RefreshIcon,
   Clear as ClearIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useBooks } from '../hooks/useBooks'
@@ -89,6 +91,8 @@ export default function MyBooks() {
   const [returnDialogOpen, setReturnDialogOpen] = useState(false)
   const [loanDialogOpen, setLoanDialogOpen] = useState(false)
   const [selectedBookForLoan, setSelectedBookForLoan] = useState<{ id: string; title: string; author: string } | null>(null)
+  const [exportAnchorEl, setExportAnchorEl] = useState<null | HTMLElement>(null)
+  const exportMenuOpen = Boolean(exportAnchorEl)
 
   // Reactive hook - automatic caching and refetching
   const { data: booksResponse, isLoading: loading, error: booksError, refetch } = useBooks({
@@ -204,6 +208,64 @@ export default function MyBooks() {
     refetch(); // Refresh books list after return
   }
 
+  const handleExportClick = (event: React.MouseEvent<HTMLElement>) => {
+    setExportAnchorEl(event.currentTarget)
+  }
+
+  const handleExportClose = () => {
+    setExportAnchorEl(null)
+  }
+
+  const exportToCSV = useCallback(() => {
+    const headers = ['Title', 'Author', 'Series', 'Series Number', 'Genre', 'Age Range', 'Status', 'Owner']
+    const rows = books.map(book => [
+      book.title || book.titleHebrew || '',
+      book.author || book.authorHebrew || '',
+      book.series || '',
+      book.seriesNumber || '',
+      book.genre || '',
+      book.ageRange || '',
+      book.stats.availableCopies > 0 ? 'Available' : 'On Loan',
+      book.owners.map(o => o.family?.name || '').join('; ')
+    ])
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `my-books-${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+    handleExportClose()
+  }, [books])
+
+  const exportToJSON = useCallback(() => {
+    const exportData = books.map(book => ({
+      title: book.title || book.titleHebrew || '',
+      author: book.author || book.authorHebrew || '',
+      series: book.series || '',
+      seriesNumber: book.seriesNumber || null,
+      genre: book.genre || '',
+      ageRange: book.ageRange || '',
+      coverImageUrl: book.coverImageUrl || '',
+      availableCopies: book.stats.availableCopies,
+      totalCopies: book.stats.totalCopies,
+      owners: book.owners.map(o => ({
+        familyName: o.family?.name || '',
+        status: o.status
+      }))
+    }))
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `my-books-${new Date().toISOString().split('T')[0]}.json`
+    link.click()
+    handleExportClose()
+  }, [books])
+
   const subtitle = {
     my: 'צפו בכל הספרים שבבעלות המשפחה שלכם, כולל ספרים זמינים ומושאלים',
     borrowed: 'רשימת הספרים ששאלתם ממשפחות אחרות בקהילה',
@@ -230,8 +292,19 @@ export default function MyBooks() {
           <IconButton aria-label="רענן" onClick={handleRefresh}>
             <RefreshIcon />
           </IconButton>
+          <IconButton aria-label="ייצוא" onClick={handleExportClick}>
+            <DownloadIcon />
+          </IconButton>
+          <Menu
+            anchorEl={exportAnchorEl}
+            open={exportMenuOpen}
+            onClose={handleExportClose}
+          >
+            <MenuItem onClick={exportToCSV}><bdi>ייצוא ל-CSV</bdi></MenuItem>
+            <MenuItem onClick={exportToJSON}><bdi>ייצוא ל-JSON</bdi></MenuItem>
+          </Menu>
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/books/add')}>
-            הוסף ספרים
+            <bdi>הוסף ספרים</bdi>
           </Button>
         </Box>
       </Box>

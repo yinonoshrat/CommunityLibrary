@@ -228,7 +228,7 @@ export default function EditBook() {
     return (
       <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
         <Alert severity="error">אין לך הרשאה לערוך ספר זה</Alert>
-        <Button startIcon={<BackIcon />} onClick={() => navigate(-1)} sx={{ mt: 2 }}>
+        <Button startIcon={<BackIcon />} onClick={() => navigate('/books')} sx={{ mt: 2 }}>
           חזרה לספרים
         </Button>
       </Container>
@@ -279,6 +279,8 @@ export default function EditBook() {
                 error={!!errors.title}
                 helperText={errors.title}
                 disabled={saving || success}
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -293,6 +295,8 @@ export default function EditBook() {
                 error={!!errors.author}
                 helperText={errors.author}
                 disabled={saving || success}
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -305,6 +309,8 @@ export default function EditBook() {
                 onChange={handleChange('series')}
                 disabled={saving || success}
                 placeholder="למשל: הארי פוטר"
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -354,6 +360,8 @@ export default function EditBook() {
                 value={formData.publisher}
                 onChange={handleChange('publisher')}
                 disabled={saving || success}
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -432,6 +440,8 @@ export default function EditBook() {
                 onChange={handleChange('summary')}
                 disabled={saving || success}
                 placeholder="תקציר קצר של הספר..."
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 

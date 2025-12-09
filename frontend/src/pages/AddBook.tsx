@@ -998,6 +998,8 @@ export default function AddBook() {
                           size="small"
                           sx={{ mb: 1 }}
                           label="שם הספר"
+                          dir="auto"
+                          inputProps={{ dir: 'auto' }}
                         />
                         <TextField
                           fullWidth
@@ -1007,6 +1009,8 @@ export default function AddBook() {
                           variant="outlined"
                           size="small"
                           label="מחבר"
+                          dir="auto"
+                          inputProps={{ dir: 'auto' }}
                         />
 
                         {/* Expandable details section */}
@@ -1020,6 +1024,8 @@ export default function AddBook() {
                                   label="סדרה"
                                   value={book.series || ''}
                                   onChange={(e) => handleEditBook(book.tempId!, 'series', e.target.value)}
+                                  dir="auto"
+                                  inputProps={{ dir: 'auto' }}
                                 />
                               </Grid>
                               <Grid size={{ xs: 12, md: 6 }}>
@@ -1039,6 +1045,8 @@ export default function AddBook() {
                                   label="ISBN"
                                   value={book.isbn || ''}
                                   onChange={(e) => handleEditBook(book.tempId!, 'isbn', e.target.value)}
+                                  dir="auto"
+                                  inputProps={{ dir: 'auto' }}
                                 />
                               </Grid>
                               <Grid size={{ xs: 12, md: 6 }}>
@@ -1058,6 +1066,8 @@ export default function AddBook() {
                                   label="הוצאה לאור"
                                   value={book.publisher || ''}
                                   onChange={(e) => handleEditBook(book.tempId!, 'publisher', e.target.value)}
+                                  dir="auto"
+                                  inputProps={{ dir: 'auto' }}
                                 />
                               </Grid>
                               <Grid size={{ xs: 12, md: 6 }}>
@@ -1109,6 +1119,8 @@ export default function AddBook() {
                                   label="קישור לתמונת השער"
                                   value={book.cover_image_url || ''}
                                   onChange={(e) => handleEditBook(book.tempId!, 'cover_image_url', e.target.value)}
+                                  dir="auto"
+                                  inputProps={{ dir: 'auto' }}
                                 />
                               </Grid>
                               <Grid size={{ xs: 12 }}>
@@ -1229,7 +1241,9 @@ export default function AddBook() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             disabled={searching || success}
+            dir="auto"
             InputProps={{
+              dir: 'auto',
               startAdornment: (
                 <InputAdornment position="start">
                   <SearchIcon />
@@ -1364,6 +1378,8 @@ export default function AddBook() {
                 error={!!errors.title}
                 helperText={errors.title}
                 disabled={loading || success}
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -1378,6 +1394,8 @@ export default function AddBook() {
                 error={!!errors.author}
                 helperText={errors.author}
                 disabled={loading || success}
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -1390,6 +1408,8 @@ export default function AddBook() {
                 onChange={handleChange('series')}
                 disabled={loading || success}
                 placeholder="למשל: הארי פוטר"
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -1413,8 +1433,9 @@ export default function AddBook() {
                 fullWidth
                 label="ISBN"
                 value={formData.isbn}
-                onChange={handleChange('isbn')}
-                disabled={loading || success}
+                onChange={handleChange('isbn')}                disabled={loading || success}
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -1439,6 +1460,8 @@ export default function AddBook() {
                 value={formData.publisher}
                 onChange={handleChange('publisher')}
                 disabled={loading || success}
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -1503,6 +1526,8 @@ export default function AddBook() {
                 onChange={handleChange('cover_image_url')}
                 disabled={loading || success}
                 placeholder="https://example.com/book-cover.jpg"
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
@@ -1517,6 +1542,8 @@ export default function AddBook() {
                 onChange={handleChange('description')}
                 disabled={loading || success}
                 placeholder="תקציר קצר של הספר..."
+                dir="auto"
+                inputProps={{ dir: 'auto' }}
               />
             </Grid>
 
