@@ -88,8 +88,8 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, 
 
   return (
     <Card data-testid="catalog-book-card" sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <CardActionArea onClick={handleNavigate}>
-        {book.coverImageUrl && (
+      <CardActionArea onClick={handleNavigate} sx={{ flexGrow: 0 }}>
+        {book.coverImageUrl ? (
           <CardMedia 
             component="img" 
             height="140" 
@@ -99,6 +99,13 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, 
               objectFit: 'contain',
               bgcolor: 'grey.50',
               p: 1
+            }} 
+          />
+        ) : (
+          <Box 
+            sx={{ 
+              height: 140,
+              bgcolor: 'grey.50',
             }} 
           />
         )}
@@ -143,7 +150,7 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, 
         </CardContent>
       </CardActionArea>
 
-      <CardContent sx={{ pt: 0, pb: 1, flexGrow: 1 }}>
+      <CardContent sx={{ pt: 0, pb: 1, flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
         {book.viewerContext.owns && viewerOwnedCopy && (
           <Box sx={{ mb: 1 }}>
             {viewerOwnedCopy.loan ? (
