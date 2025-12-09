@@ -123,6 +123,14 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, 
               {book.author}
             </Typography>
           )}
+          <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ gap: 0.5, mb: 1 }}>
+            {book.genre && (
+              <Chip label={book.genre} size="small" variant="outlined" />
+            )}
+            {book.ageRange && (
+              <Chip label={book.ageRange} size="small" variant="outlined" color="secondary" />
+            )}
+          </Stack>
           <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ gap: 0.5 }}>
             <Chip label={`${book.stats.availableCopies}/${book.stats.totalCopies}`} size="small" color={book.stats.availableCopies > 0 ? 'success' : 'default'} />
             {book.viewerContext.owns && (
