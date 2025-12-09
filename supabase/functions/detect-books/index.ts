@@ -12,7 +12,7 @@ class GeminiVisionService {
   private apiKey: string;
   private modelName: string;
 
-  constructor(apiKey: string, modelName = 'gemini-2.0-flash-exp') {
+  constructor(apiKey: string, modelName = 'gemini-2.5-flash') {
     this.apiKey = apiKey;
     this.modelName = modelName;
   }

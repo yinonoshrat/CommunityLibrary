@@ -12,7 +12,7 @@ import AIVisionService from './aiVisionService.js';
  * This provides better accuracy for complex layouts and mixed languages.
  */
 class HybridVisionService extends AIVisionService {
-  constructor() {
+  constructor(options = {}) {
     super();
     
     // Check for Google Cloud credentials
@@ -58,11 +58,22 @@ class HybridVisionService extends AIVisionService {
     
     this.visionClient = new ImageAnnotatorClient(visionConfig);
     
-    // Initialize Gemini
+    // Initialize Gemini with configurable model
+    const modelName = options.geminiModel || 'gemini-2.5-flash';
     this.genAI = new GoogleGenerativeAI(geminiKey);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const systemInstruction = "You are a Hebrew assistant. When outputting Hebrew abbreviations (Rashei Tevot), you must strictly use the Hebrew Gershayim character (״) (Unicode U+05F4) or single quotes ('). NEVER use a standard double quote (\") inside a JSON string value unless it is escaped with a backslash.";  
+        
+    this.model = this.genAI.getGenerativeModel({ 
+      model: modelName,
+      systemInstruction,
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0,
+      }
+    });
+    this.modelName = modelName;
     
-    console.log('Hybrid Vision Service initialized (Google Cloud Vision OCR + Gemini)');
+    console.log(`Hybrid Vision Service initialized (Google Cloud Vision OCR + ${modelName})`);
   }
 
   /**
@@ -88,7 +99,7 @@ class HybridVisionService extends AIVisionService {
       }
       
       console.log(`OCR extracted ${ocrData.fullText.length} characters in ${ocrData.blocks.length} text blocks`);
-      console.log('Sample OCR text:', ocrData.fullText.substring(0, 200) + '...');
+      console.log('Sample OCR text:', ocrData.fullText.substring(0, 2000) + '...');
 
       // Step 2: Use Gemini to infer books from OCR data + image
       console.log('Step 2: Analyzing with Gemini to identify books...');
@@ -235,7 +246,6 @@ class HybridVisionService extends AIVisionService {
 
         // Create structured text summary for Gemini
         const structuredText = this.formatStructuredOCR(ocrData);
-
         const prompt = `You are analyzing a bookshelf image to identify book titles and authors.
 
 I have already extracted the text visible in the image using OCR. The text is organized with positioning and orientation information:
@@ -463,7 +473,20 @@ Important guidelines:
    */
   validateBooks(books) {
     return books
-      .filter(book => book && typeof book === 'object' && book.title)
+      .filter(book => {
+        // Must be an object with a title
+        if (!book || typeof book !== 'object' || !book.title) {
+          return false
+        }
+        
+        // Title must be meaningful (at least 2 characters, not just punctuation)
+        const title = String(book.title).trim()
+        if (title.length < 2) {
+          return false
+        }        
+        
+        return true
+      })
       .map(book => ({
         title: String(book.title).trim(),
         author: book.author ? String(book.author).trim() : '',

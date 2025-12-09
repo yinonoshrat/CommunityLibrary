@@ -1,0 +1,178 @@
+[
+  {
+    "title": "הארי פוטר ואבן החכמים",
+    "author": "ג'יי. קיי. רולינג",
+    "series": "הארי פוטר",
+    "series_number": 1,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "הארי פוטר והילד המקולל",
+    "author": "ג'ון טיפאני וגק ת'ורן",
+    "series": "הארי פוטר",
+    "series_number": null,
+    "genre": "פנטזיה",
+    "age_range": "13-15"
+  },
+  {
+    "title": "הארי פוטר וגביע האש",
+    "author": "ג'יי. קיי. רולינג",
+    "series": "הארי פוטר",
+    "series_number": 4,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "הארי פוטר והאסיר מאזקבאן",
+    "author": "ג'יי. קיי. רולינג",
+    "series": "הארי פוטר",
+    "series_number": 3,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "ארטמיס פאול: תקרית הקרח",
+    "author": "אואן קולפר",
+    "series": "ארטמיס פאול",
+    "series_number": 2,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "ארטמיס פאול: קוד הנצח",
+    "author": "אואן קולפר",
+    "series": "ארטמיס פאול",
+    "series_number": 3,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "ארטמיס פאול: פרדוקס הזמן",
+    "author": "אואן קולפר",
+    "series": "ארטמיס פאול",
+    "series_number": 6,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "שלושה מטרים מעל השמים",
+    "author": "פדריקו מוצ'ה",
+    "series": "",
+    "series_number": null,
+    "genre": "רומן",
+    "age_range": "מבוגרים"
+  },
+  {
+    "title": "הוואלס האיטי של הצבים",
+    "author": "קתרין פנקול",
+    "series": "",
+    "series_number": null,
+    "genre": "רומן",
+    "age_range": "מבוגרים"
+  },
+  {
+    "title": "הארנבת עם עיני הענבר",
+    "author": "אדמונד דה ואל",
+    "series": "",
+    "series_number": null,
+    "genre": "ביוגרפיה",
+    "age_range": "מבוגרים"
+  },
+  {
+    "title": "גנב הברק",
+    "author": "ריק ריירדן",
+    "series": "פרסי ג'קסון והאולימפיים",
+    "series_number": 1,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "ים המפלצות",
+    "author": "ריק ריירדן",
+    "series": "פרסי ג'קסון והאולימפיים",
+    "series_number": 2,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "קללת הטיטאן",
+    "author": "ריק ריירדן",
+    "series": "פרסי ג'קסון והאולימפיים",
+    "series_number": 3,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "קרב המבוך",
+    "author": "ריק ריירדן",
+    "series": "פרסי ג'קסון והאולימפיים",
+    "series_number": 4,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "תקוות האולימפוס",
+    "author": "ריק ריירדן",
+    "series": "פרסי ג'קסון והאולימפיים",
+    "series_number": 5,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "הגיבור האבוד",
+    "author": "ריק ריירדן",
+    "series": "גיבורי האולימפוס",
+    "series_number": 1,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "חרב הקיץ",
+    "author": "ריק ריירדן",
+    "series": "מגנס צ'ייס וגורל אסקגארד",
+    "series_number": 1,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "שומרת הערים האבודות: ספר ראשון",
+    "author": "שאנון מסנג'ר",
+    "series": "שומרת הערים האבודות",
+    "series_number": 1,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "גלות",
+    "author": "שאנון מסנג'ר",
+    "series": "שומרת הערים האבודות",
+    "series_number": 2,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "חשיפה",
+    "author": "שאנון מסנג'ר",
+    "series": "שומרת הערים האבודות",
+    "series_number": 3,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "להבת הנצח",
+    "author": "שאנון מסנג'ר",
+    "series": "שומרת הערים האבודות",
+    "series_number": 4,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "לילה",
+    "author": "שאנון מסנג'ר",
+    "series": "שומרת הערים האבודות",
+    "series_number": 5,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  }
+]

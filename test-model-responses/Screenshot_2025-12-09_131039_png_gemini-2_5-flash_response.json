@@ -1,0 +1,26 @@
+[
+  {
+    "title": "איל משולש",
+    "author": "אליהו לנינו סקסין",
+    "series": "",
+    "series_number": null,
+    "genre": "עיון",
+    "age_range": "מבוגרים"
+  },
+  {
+    "title": "מסכת עירובין",
+    "author": "",
+    "series": "תלמוד",
+    "series_number": null,
+    "genre": "עיון",
+    "age_range": "מבוגרים"
+  },
+  {
+    "title": "",
+    "author": "רש״י",
+    "series": "",
+    "series_number": null,
+    "genre": "עיון",
+    "age_range": "מבוגרים"
+  }
+]

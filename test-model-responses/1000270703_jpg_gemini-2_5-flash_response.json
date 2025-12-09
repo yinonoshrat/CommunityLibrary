@@ -1,0 +1,202 @@
+[
+  {
+    "title": "הפירמידה האדומה",
+    "author": "ריק ריירדן",
+    "series": "משפחת קיין",
+    "series_number": 1,
+    "genre": "פנטזיה",
+    "age_range": "13-15"
+  },
+  {
+    "title": "העי\"ג",
+    "author": "רואלד דאל",
+    "series": "",
+    "series_number": null,
+    "genre": "ילדים",
+    "age_range": "7-9"
+  },
+  {
+    "title": "הקוסם",
+    "author": "סבסטיאן דה קסטל",
+    "series": "קסמי קמ",
+    "series_number": 1,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "כובל הנשמות",
+    "author": "סבסטיאן דה קסטל",
+    "series": "קסמי קמ",
+    "series_number": 2,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "מָאלָאדָר – קסם הקמע",
+    "author": "ליאת רוטנר",
+    "series": "",
+    "series_number": null,
+    "genre": "נוער",
+    "age_range": "13-15"
+  },
+  {
+    "title": "אורי",
+    "author": "אסתר שטרייט וורצל",
+    "series": "",
+    "series_number": null,
+    "genre": "נוער",
+    "age_range": "13-15"
+  },
+  {
+    "title": "חמש דקות פחד",
+    "author": "אוריאל אופק",
+    "series": "",
+    "series_number": null,
+    "genre": "ילדים",
+    "age_range": "7-9"
+  },
+  {
+    "title": "קוין: הַפּוֹנִי וְהָאַגָּדָה",
+    "author": "קייק ריק ושָׂרָה אריסייר",
+    "series": "",
+    "series_number": null,
+    "genre": "ילדים",
+    "age_range": "7-9"
+  },
+  {
+    "title": "ציידי האוצר",
+    "author": "",
+    "series": "",
+    "series_number": null,
+    "genre": "נוער",
+    "age_range": "10-12"
+  },
+  {
+    "title": "הסודות של ניקולס פלמל: הקוסם",
+    "author": "מייקל סקוט",
+    "series": "הסודות של ניקולס פלמל",
+    "series_number": 1,
+    "genre": "פנטזיה",
+    "age_range": "13-15"
+  },
+  {
+    "title": "הסודות של ניקולס פלמל: האלכימאי",
+    "author": "מייקל סקוט",
+    "series": "הסודות של ניקולס פלמל",
+    "series_number": 2,
+    "genre": "פנטזיה",
+    "age_range": "13-15"
+  },
+  {
+    "title": "החמישייה הסודית באי המטמון",
+    "author": "איניד בלייטון",
+    "series": "החמישייה הסודית",
+    "series_number": null,
+    "genre": "ילדים",
+    "age_range": "7-9"
+  },
+  {
+    "title": "הילדים האחרונים בעולם",
+    "author": "מקס ברולייך ודאגלס הולגייט",
+    "series": "הילדים האחרונים בעולם",
+    "series_number": 1,
+    "genre": "נוער",
+    "age_range": "10-12"
+  },
+  {
+    "title": "השרביט והחרב",
+    "author": "",
+    "series": "",
+    "series_number": null,
+    "genre": "פנטזיה",
+    "age_range": "13-15"
+  },
+  {
+    "title": "המפתח הסודי",
+    "author": "ג'ורג' הוקינג",
+    "series": "",
+    "series_number": null,
+    "genre": "מדע בדיוני",
+    "age_range": "10-12"
+  },
+  {
+    "title": "רובין הוד",
+    "author": "",
+    "series": "",
+    "series_number": null,
+    "genre": "נוער",
+    "age_range": "10-12"
+  },
+  {
+    "title": "הרפתקאות רודריק גורדון",
+    "author": "רודריק גורדון",
+    "series": "",
+    "series_number": null,
+    "genre": "נוער",
+    "age_range": "10-12"
+  },
+  {
+    "title": "גרגור וקללת הדם",
+    "author": "סוזן קולינס",
+    "series": "גרגור",
+    "series_number": 2,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "גרגור ואימת האבדון",
+    "author": "סוזן קולינס",
+    "series": "גרגור",
+    "series_number": 3,
+    "genre": "פנטזיה",
+    "age_range": "10-12"
+  },
+  {
+    "title": "ג'ים ונהג הקטר",
+    "author": "מיכאל אנדה",
+    "series": "",
+    "series_number": null,
+    "genre": "ילדים",
+    "age_range": "7-9"
+  },
+  {
+    "title": "יצורי הפרא",
+    "author": "דייב אגרס",
+    "series": "",
+    "series_number": null,
+    "genre": "ילדים",
+    "age_range": "4-6"
+  },
+  {
+    "title": "20,000 מיל מתחת למים",
+    "author": "ז'ול ורן",
+    "series": "",
+    "series_number": null,
+    "genre": "מדע בדיוני",
+    "age_range": "10-12"
+  },
+  {
+    "title": "תעלומת הצופן הסודי",
+    "author": "סופיה מקדוגל",
+    "series": "",
+    "series_number": null,
+    "genre": "נוער",
+    "age_range": "10-12"
+  },
+  {
+    "title": "הרפתקאות תום סויר",
+    "author": "מרק טוויין",
+    "series": "",
+    "series_number": null,
+    "genre": "נוער",
+    "age_range": "10-12"
+  },
+  {
+    "title": "פיטר פן",
+    "author": "ג'יימס מת'יו בארי",
+    "series": "",
+    "series_number": null,
+    "genre": "ילדים",
+    "age_range": "7-9"
+  }
+]
