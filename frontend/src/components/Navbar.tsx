@@ -1,8 +1,9 @@
-import { AppBar, Toolbar, Typography, Button, Box, IconButton, Menu, MenuItem, Avatar } from '@mui/material'
-import { ArrowBack } from '@mui/icons-material'
+import { AppBar, Toolbar, Typography, Button, Box, IconButton, Menu, MenuItem, Avatar, Divider } from '@mui/material'
+import { ArrowBack, Palette as PaletteIcon } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useThemeContext } from '../contexts/ThemeContext'
 
 interface NavbarProps {
   user: any
@@ -11,7 +12,9 @@ interface NavbarProps {
 export default function Navbar({ user }: NavbarProps) {
   const navigate = useNavigate()
   const location = useLocation()
+  const { setTheme, currentTheme, availableThemes } = useThemeContext()
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+  const [themeAnchorEl, setThemeAnchorEl] = useState<null | HTMLElement>(null)
 
   // Pages that should not show back button (main navigation pages)
   const noBackButtonPages = ['/', '/login', '/register']
@@ -23,6 +26,19 @@ export default function Navbar({ user }: NavbarProps) {
 
   const handleClose = () => {
     setAnchorEl(null)
+  }
+
+  const handleThemeMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setThemeAnchorEl(event.currentTarget)
+  }
+
+  const handleThemeMenuClose = () => {
+    setThemeAnchorEl(null)
+  }
+
+  const handleThemeChange = (themeName: any) => {
+    setTheme(themeName)
+    handleThemeMenuClose()
   }
 
   const handleLogout = async () => {
@@ -95,6 +111,35 @@ export default function Navbar({ user }: NavbarProps) {
               <MenuItem onClick={() => { navigate('/recommendations'); handleClose(); }}>
                 המלצות
               </MenuItem>
+              <Divider />
+              <MenuItem onClick={handleThemeMenuOpen} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <PaletteIcon sx={{ fontSize: '1.25rem' }} />
+                ערכת נושא
+              </MenuItem>
+              <Menu
+                anchorEl={themeAnchorEl}
+                open={Boolean(themeAnchorEl)}
+                onClose={handleThemeMenuClose}
+                anchorOrigin={{
+                  vertical: 'top',
+                  horizontal: 'right',
+                }}
+                transformOrigin={{
+                  vertical: 'top',
+                  horizontal: 'left',
+                }}
+              >
+                {availableThemes.map((theme) => (
+                  <MenuItem
+                    key={theme.name}
+                    onClick={() => handleThemeChange(theme.name)}
+                    selected={currentTheme === theme.name}
+                  >
+                    {theme.label}
+                  </MenuItem>
+                ))}
+              </Menu>
+              <Divider />
               <MenuItem onClick={handleLogout}>
                 התנתק
               </MenuItem>

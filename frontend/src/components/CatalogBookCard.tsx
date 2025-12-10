@@ -12,6 +12,7 @@ import {
   Divider,
   Stack,
 } from '@mui/material'
+import { useTheme } from '@mui/material/styles'
 import {
   Phone as PhoneIcon,
   WhatsApp as WhatsAppIcon,
@@ -49,6 +50,7 @@ const getPrimaryFamilyBookId = (book: CatalogBook) => {
 function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, onCreateLoan }: CatalogBookCardProps) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const theme = useTheme()
   
   // Use reactive hook for user data - automatic caching
   const { data: _userResponse } = useUser(user?.id)
@@ -97,7 +99,7 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, 
             alt={book.title || 'ספר'} 
             sx={{ 
               objectFit: 'contain',
-              bgcolor: 'grey.50',
+              bgcolor: theme.palette.mode === 'dark' ? '#2a2a2a' : 'grey.50',
               p: 1
             }} 
           />
@@ -105,7 +107,7 @@ function CatalogBookCard({ book, onMarkReturned, onLoanSuccess: _onLoanSuccess, 
           <Box 
             sx={{ 
               height: 140,
-              bgcolor: 'grey.50',
+              bgcolor: theme.palette.mode === 'dark' ? '#2a2a2a' : 'grey.50',
             }} 
           />
         )}

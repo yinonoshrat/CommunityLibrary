@@ -6,8 +6,8 @@ import { prefixer } from 'stylis'
 import rtlPlugin from 'stylis-plugin-rtl'
 import { CacheProvider } from '@emotion/react'
 import createCache from '@emotion/cache'
-import { theme } from './theme'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { ThemeContextProvider, useThemeContext } from './contexts/ThemeContext'
 import Navbar from './components/Navbar'
 import Home from './pages/Home'
 import Login from './pages/Login'
@@ -44,37 +44,41 @@ const queryClient = new QueryClient({
   },
 })
 
-function AppRoutes() {
+function AppContent() {
   const { user, loading } = useAuth()
+  const { muiTheme } = useThemeContext()
 
   if (loading) {
     return null // AuthProvider handles loading state
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', m: 0, p: 0 }}>
-      <Navbar user={user} />
-      <Box component="main" sx={{ flexGrow: 1, p: 0, m: 0 }}>
-        <Routes>
-        <Route path="/" element={user ? <Home /> : <Navigate to="/login" />} />
-        <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
-        <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
-        <Route path="/complete-profile" element={<CompleteProfile />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/books" element={user ? <MyBooks /> : <Navigate to="/login" />} />
-        <Route path="/books/add" element={user ? <AddBook /> : <Navigate to="/login" />} />
-        <Route path="/books/:id" element={user ? <BookDetails /> : <Navigate to="/login" />} />
-        <Route path="/books/:id/edit" element={user ? <EditBook /> : <Navigate to="/login" />} />
-        <Route path="/search" element={user ? <SearchBooks /> : <Navigate to="/login" />} />
-        <Route path="/loans" element={user ? <LoansDashboard /> : <Navigate to="/login" />} />
-        <Route path="/recommendations" element={user ? <Recommendations /> : <Navigate to="/login" />} />
-        <Route path="/family" element={user ? <FamilyDashboard /> : <Navigate to="/login" />} />
-        <Route path="/family/members" element={user ? <FamilyMembers /> : <Navigate to="/login" />} />
-        <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
-        </Routes>
+    <ThemeProvider theme={muiTheme}>
+      <CssBaseline />
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', m: 0, p: 0 }}>
+        <Navbar user={user} />
+        <Box component="main" sx={{ flexGrow: 1, p: 0, m: 0 }}>
+          <Routes>
+            <Route path="/" element={user ? <Home /> : <Navigate to="/login" />} />
+            <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+            <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/complete-profile" element={<CompleteProfile />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/books" element={user ? <MyBooks /> : <Navigate to="/login" />} />
+            <Route path="/books/add" element={user ? <AddBook /> : <Navigate to="/login" />} />
+            <Route path="/books/:id" element={user ? <BookDetails /> : <Navigate to="/login" />} />
+            <Route path="/books/:id/edit" element={user ? <EditBook /> : <Navigate to="/login" />} />
+            <Route path="/search" element={user ? <SearchBooks /> : <Navigate to="/login" />} />
+            <Route path="/loans" element={user ? <LoansDashboard /> : <Navigate to="/login" />} />
+            <Route path="/recommendations" element={user ? <Recommendations /> : <Navigate to="/login" />} />
+            <Route path="/family" element={user ? <FamilyDashboard /> : <Navigate to="/login" />} />
+            <Route path="/family/members" element={user ? <FamilyMembers /> : <Navigate to="/login" />} />
+            <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
+          </Routes>
+        </Box>
       </Box>
-    </Box>
+    </ThemeProvider>
   )
 }
 
@@ -82,14 +86,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <CacheProvider value={cacheRtl}>
-        <ThemeProvider theme={theme}>
-          <CssBaseline />
+        <ThemeContextProvider>
           <AuthProvider>
             <Router>
-              <AppRoutes />
+              <AppContent />
             </Router>
           </AuthProvider>
-        </ThemeProvider>
+        </ThemeContextProvider>
       </CacheProvider>
       {/* React Query Devtools - only in development */}
       {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
