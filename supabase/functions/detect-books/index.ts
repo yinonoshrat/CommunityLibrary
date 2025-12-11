@@ -4,7 +4,7 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { generateSimpleBookDetectionPrompt, parseJsonResponse } from './visionServiceUtils.ts';
+import { generateBookDetectionPrompt, parseJsonResponse } from './visionServiceUtils.ts';
 
 // ============================================================================
 // Gemini Vision Service (shared logic with backend)
@@ -21,8 +21,8 @@ class GeminiVisionService {
   async detectBooksFromImage(imageBase64: string): Promise<any[]> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent?key=${this.apiKey}`;
     
-    // Use the shared prompt generation function
-    const prompt = generateSimpleBookDetectionPrompt();
+    // Use the shared prompt generation function (without OCR data in edge function)
+    const prompt = generateBookDetectionPrompt();
     
     const payload = {
       contents: [{

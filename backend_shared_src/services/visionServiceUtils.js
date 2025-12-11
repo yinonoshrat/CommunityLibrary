@@ -7,42 +7,47 @@
  */
 
 /**
- * Generate the Gemini prompt for book detection with OCR data
- * @param {string} structuredText - Formatted OCR text with positioning
+ * Generate the Gemini prompt for book detection with optional OCR data
+ * @param {string} [structuredText] - Optional formatted OCR text with positioning
  * @returns {string} - The complete prompt
  */
 export function generateBookDetectionPrompt(structuredText) {
-  return `You are an expert book librarian and image analyst. Your task is to analyze bookshelf images and extract ALL visible book information.
-
+  const ocrSection = structuredText ? `
 I have already extracted text visible in the image using OCR. The text is organized with positioning and orientation information:
 
 --- STRUCTURED OCR DATA START ---
 ${structuredText}
 --- STRUCTURED OCR DATA END ---
 
-Your task:
-1. Look at the image to see the physical books (spines, covers, arrangement)
-2. Use the structured OCR data to help understand which text blocks belong together
-3. Match text blocks to the books you see based on their position
-4. Group text that appears close together (same book spine/cover)
-5. For each book, identify the title and author from the grouped text and the image
-6. if you can identify also series and number include them in the output
-7. For each book return it genre from the following list in Hebrew:
-  'רומן',  'מתח',  'מדע בדיוני',  'פנטזיה',  'ביוגרפיה',  'היסטוריה',  'מדע',  'ילדים',  'נוער',  'עיון',  'שירה',  'אחר'
-8. For each book return it appropriate age range from the following list in Hebrew:
-  '0-3',  '4-6',  '7-9',  '10-12',  '13-15',  '16-18',  'מבוגרים',  'כל הגילאים'
+` : '';
 
-Understanding the data:
+  const ocrGuidelines = structuredText ? `
+- Use the structured OCR data to help understand which text blocks belong together
+- Match text blocks to the books you see based on their position
+- Consider text proximity and orientation when grouping
 - Each text block has a position (centerX, centerY) and orientation (horizontal/vertical)
 - Text blocks close together vertically or horizontally likely belong to the same book
-- Book spines can be vertical (rotated text) or horizontal
-- Titles are usually more prominent than author names
+- Use the exact text from the OCR results (preserve Hebrew/English/other languages)` : `
+- Identify text on book spines and covers
+- Group text that appears together on the same book
+- Preserve Hebrew/English/other languages exactly as they appear`;
+
+  return `You are an expert book librarian and image analyst. Your task is to analyze bookshelf images and extract ALL visible book information.
+${ocrSection}
+Your task:
+1. Look at the image to see the physical books (spines, covers, arrangement)${ocrGuidelines}
+2. For each book, identify the title and author
+3. If you can identify series name and number, include them in the output
+4. For each book return its genre from the following list in Hebrew:
+  'רומן',  'מתח',  'מדע בדיוני',  'פנטזיה',  'ביוגרפיה',  'היסטוריה',  'מדע',  'ילדים',  'נוער',  'עיון',  'שירה',  'אחר'
+5. For each book return its appropriate age range from the following list in Hebrew:
+  '0-3',  '4-6',  '7-9',  '10-12',  '13-15',  '16-18',  'מבוגרים',  'כל הגילאים'
 
 Return ONLY a valid JSON array with this exact structure:
 [
   {
-    "title": "exact book title from OCR",
-    "author": "author name from OCR or empty string if not found",
+    "title": "exact book title",
+    "author": "author name or empty string if not found",
     "series": "series name or empty string if not found",
     "series_number": number or null if not found,
     "genre": "genre in Hebrew from the predefined list",
@@ -52,46 +57,12 @@ Return ONLY a valid JSON array with this exact structure:
 
 Important guidelines:
 - Only include books where you can clearly match text to a visible book
-- Make sure that each book you outputed actually appears in the image
+- Make sure that each book you output actually appears in the image
 - Try to extract as many books as possible
-- Use the exact text from the OCR results (preserve Hebrew/English/other languages)
 - If author is not visible, use empty string ""
-- Consider text proximity and orientation when grouping
 - Book spines typically show title first, then author
 - Return valid JSON array only, no markdown, no extra text
 - If you can't identify any books with confidence, return an empty array []`;
-}
-
-/**
- * Generate a simple prompt for direct image analysis (without OCR)
- * @returns {string} - The complete prompt
- */
-export function generateSimpleBookDetectionPrompt() {
-  return `Analyze this image of a bookshelf and extract all visible book titles and authors.
-Return the results as a JSON array with the following structure:
-[
-  {
-    "title": "Book Title",
-    "author": "Author Name",
-    "series": "Series Name",
-    "series_number": 1,
-    "genre": "genre in Hebrew",
-    "age_range": "age range in Hebrew"
-  }
-]
-
-IMPORTANT RULES:
-- Only include books where the title is clearly readable
-- Include author name if visible on the spine or cover
-- If author is not visible, use empty string ""
-- If series information is visible, include it (series name and number)
-- For genre, choose from: 'רומן', 'מתח', 'מדע בדיוני', 'פנטזיה', 'ביוגרפיה', 'היסטוריה', 'מדע', 'ילדים', 'נוער', 'עיון', 'שירה', 'אחר'
-- For age_range, choose from: '0-3', '4-6', '7-9', '10-12', '13-15', '16-18', 'מבוגרים', 'כל הגילאים'
-- Return valid JSON only, no additional text or markdown formatting
-- Support both Hebrew and English titles
-- If you see a series name and number (e.g., "Harry Potter 1"), include the number in the series_number field
-- Do not include duplicate books
-- If you cannot read any books clearly, return an empty array []`;
 }
 
 /**
