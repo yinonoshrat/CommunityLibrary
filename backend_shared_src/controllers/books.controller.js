@@ -915,9 +915,6 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
     }
   })();
 
-  // Check if we should run locally or use edge function
-  const runLocally = process.env.RUN_DETECTION_LOCALLY === 'true';
-
   if (jobError) {
     console.error('[detectBooksFromImage] Failed to create detection job:', jobError);
     console.error('[detectBooksFromImage] Error details:', JSON.stringify(jobError, null, 2));

@@ -1,0 +1,110 @@
+# GitHub Actions Workflow: Detection Job Maintenance - PRODUCTION
+# Purpose: Run detection job cleanup and timeout checking for PRODUCTION environment
+# Triggers: Manual only (for safety) - use workflow_dispatch
+
+name: Detection Job Maintenance (Production)
+
+on:
+  workflow_dispatch:  # Manual trigger only for production
+    inputs:
+      job_type:
+        description: 'Which job to run'
+        required: true
+        type: choice
+        options:
+          - cleanup
+          - timeout-check
+          - both
+
+jobs:
+  cleanup-detection-jobs-prod:
+    if: github.event.inputs.job_type == 'cleanup' || github.event.inputs.job_type == 'both'
+    runs-on: ubuntu-latest
+    name: Cleanup detection job images (PRODUCTION)
+    environment: Production  # Uses Production environment secrets
+    
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      
+      - name: Validate secrets
+        run: |
+          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
+            echo "Error: SUPABASE_URL secret is not set in Production environment"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "Error: SUPABASE_SERVICE_ROLE_KEY secret is not set in Production environment"
+            exit 1
+          fi
+          echo "⚠️  Running cleanup against PRODUCTION environment"
+      
+      - name: Call cleanup Edge Function
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/cleanup-detection-jobs" \
+            -d '{"source":"github-actions-production"}' \
+            -w "\nHTTP Status: %{http_code}\n" \
+            -f
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      
+      - name: Log cleanup result
+        if: success()
+        run: echo "✅ Production cleanup job completed successfully"
+      
+      - name: Report cleanup failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.setFailed('Production cleanup job failed - check logs above')
+
+  check-timeout-jobs-prod:
+    if: github.event.inputs.job_type == 'timeout-check' || github.event.inputs.job_type == 'both'
+    runs-on: ubuntu-latest
+    name: Check for timeout detection jobs (PRODUCTION)
+    environment: Production  # Uses Production environment secrets
+    
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      
+      - name: Validate secrets
+        run: |
+          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
+            echo "Error: SUPABASE_URL secret is not set in Production environment"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "Error: SUPABASE_SERVICE_ROLE_KEY secret is not set in Production environment"
+            exit 1
+          fi
+          echo "⚠️  Running timeout check against PRODUCTION environment"
+      
+      - name: Call timeout detection Edge Function
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/mark-jobs-as-failed-if-stuck" \
+            -d '{"source":"github-actions-production"}' \
+            -w "\nHTTP Status: %{http_code}\n" \
+            -f
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      
+      - name: Log timeout check result
+        if: success()
+        run: echo "✅ Production timeout check completed successfully"
+      
+      - name: Report timeout check failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.setFailed('Production timeout check failed - check logs above')

@@ -100,12 +100,18 @@ Located in `supabase/functions/`:
 1. ✅ **cleanup-detection-jobs/** (142 lines)
    - Purpose: Delete images >7 days old
    - Schedule: Daily at 2 AM UTC
-   - Status: Code ready, needs deployment
+   - Status: Code ready, **NEEDS DEPLOYMENT**
 
 2. ✅ **mark-jobs-as-failed-if-stuck/** (134 lines)
    - Purpose: Mark processing jobs >10 min as failed
    - Schedule: Every 5 minutes
-   - Status: Code ready, needs deployment
+   - Status: Code ready, **NEEDS DEPLOYMENT**
+
+### ⚠️ IMPORTANT: Deploy Edge Functions Before Enabling Cron Jobs
+
+**Current Status**: GitHub Actions cron jobs are **temporarily disabled** until Edge Functions are deployed.
+
+The workflow file `.github/workflows/detection-job-maintenance.yml` has scheduled runs commented out to prevent errors.
 
 ### Deployment Commands
 ```bash
