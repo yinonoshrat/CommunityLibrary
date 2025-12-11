@@ -1,6 +1,12 @@
 import { db, supabase } from '../db/adapter.js';
 import { asyncHandler } from '../middleware/errorHandler.middleware.js';
 import { searchBookDetails } from '../services/bookSearch.js';
+import { DETECTION_ERROR_CODES, getErrorResponse } from '../constants/detectionErrors.js';
+import {
+  generateThumbnail,
+  uploadImageToStorage,
+  validateImageFile
+} from '../services/storageService.js';
 
 // AI Vision Service (will be injected by router)
 let aiVisionService = null;
@@ -819,10 +825,11 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'No image provided' });
   }
 
-  // Validate file is an image
-  if (!req.file.mimetype.startsWith('image/')) {
-    console.error('Non-image file rejected:', req.file.mimetype);
-    return res.status(400).json({ error: 'Only image files are allowed' });
+  // Validate file
+  const validation = validateImageFile(req.file);
+  if (!validation.valid) {
+    console.error('File validation failed:', validation.error);
+    return res.status(400).json({ error: validation.error });
   }
 
   // Validate user authentication
@@ -834,19 +841,82 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
 
   // Convert image buffer to base64
   const imageBase64 = req.file.buffer.toString('base64');
+  const imageBuffer = req.file.buffer;
+
+  // Generate thumbnail for database display
+  let imageThumbnail = null;
+  try {
+    imageThumbnail = await generateThumbnail(imageBuffer);
+  } catch (err) {
+    console.warn('Thumbnail generation failed:', err.message);
+    // Continue without thumbnail - not critical
+  }
 
   // Create job in database
-  const { supabase } = await import('../db/adapter.js');
-  const { data: job, error: jobError } = await supabase
+  const { supabase: supabaseClient } = await import('../db/adapter.js');
+  const { data: job, error: jobError } = await supabaseClient
     .from('detection_jobs')
     .insert({
       user_id: req.user.id,
       status: 'processing',
       image_data: imageBase64,
-      progress: 0
+      image_original_filename: req.file.originalname,
+      image_mime_type: req.file.mimetype,
+      image_size_bytes: req.file.size,
+      image_base64_thumbnail: imageThumbnail,
+      image_uploaded_at: new Date().toISOString(),
+      progress: 0,
+      stage: 'uploading'
     })
     .select()
     .single();
+
+  if (jobError) {
+    console.error('[detectBooksFromImage] Failed to create detection job:', jobError);
+    console.error('[detectBooksFromImage] Error details:', JSON.stringify(jobError, null, 2));
+    return res.status(500).json({ error: 'Failed to create detection job' });
+  }
+
+  console.log(`[detectBooksFromImage] ✓ Created detection job: ${job.id}`);
+
+  // Upload image to Supabase Storage (async, don't wait)
+  (async () => {
+    try {
+      console.log(`[detectBooksFromImage] Uploading image to storage for job: ${job.id}`);
+      
+      const storageResult = await uploadImageToStorage(
+        supabaseClient,
+        req.user.id,
+        job.id,
+        imageBuffer,
+        req.file.mimetype
+      );
+
+      // Update job with storage paths and signed URL
+      const { error: updateError } = await supabaseClient
+        .from('detection_jobs')
+        .update({
+          image_storage_path: storageResult.path,
+          image_storage_url: storageResult.url,
+          progress: 15,
+          stage: 'extracting_text',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', job.id);
+
+      if (updateError) {
+        console.error(`[detectBooksFromImage] Failed to update storage paths: ${updateError.message}`);
+      } else {
+        console.log(`[detectBooksFromImage] ✓ Image uploaded: ${storageResult.path}`);
+      }
+    } catch (uploadErr) {
+      console.error(`[detectBooksFromImage] ✗ Image upload failed: ${uploadErr.message}`);
+      // Continue - image storage is nice-to-have but not critical
+    }
+  })();
+
+  // Check if we should run locally or use edge function
+  const runLocally = process.env.RUN_DETECTION_LOCALLY === 'true';
 
   if (jobError) {
     console.error('[detectBooksFromImage] Failed to create detection job:', jobError);
@@ -867,127 +937,189 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
       try {
         console.log(`[detectBooksFromImage] Starting local detection for job: ${job.id}`);
         
-        // Update progress to 10%
-        await supabase
-          .from('detection_jobs')
-          .update({ progress: 10, updated_at: new Date().toISOString() })
-          .eq('id', job.id);
+        // Progress callback function - updates job status in database
+        const onProgress = async (stage, percentage, message) => {
+          console.log(`[detectBooksFromImage] Progress: ${stage} - ${percentage}% - ${message}`);
+          
+          try {
+            const updateData = {
+              stage,
+              progress: percentage,
+              updated_at: new Date().toISOString()
+            };
+            
+            // Add error code if this is a failure stage
+            if (stage.startsWith('failed_')) {
+              updateData.stage = stage;
+            }
+            
+            await supabase
+              .from('detection_jobs')
+              .update(updateData)
+              .eq('id', job.id);
+          } catch (updateErr) {
+            console.error(`[detectBooksFromImage] Failed to update progress: ${updateErr.message}`);
+          }
+        };
 
-        // Detect books using AI (50% progress)
-        const detectedBooks = await aiVisionService.detectBooksFromImage(Buffer.from(imageBase64, 'base64'));
+        // Detect books using AI with progress callbacks
+        const detectionResult = await aiVisionService.detectBooksFromImage(
+          Buffer.from(imageBase64, 'base64'),
+          { onProgress }
+        );
+        
+        // Check if detection had an error
+        if (detectionResult.errorCode) {
+          console.error(`[detectBooksFromImage] Detection failed: ${detectionResult.errorCode} - ${detectionResult.errorMessage}`);
+          
+          const { error: updateError } = await supabase
+            .from('detection_jobs')
+            .update({
+              status: 'failed',
+              error_code: detectionResult.errorCode,
+              error: detectionResult.errorMessage,
+              can_retry: detectionResult.canRetry,
+              stage: 'failed_ai',
+              progress: 0,
+              image_analysis_metadata: detectionResult.metadata,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', job.id);
+          
+          if (updateError) {
+            console.error(`[detectBooksFromImage] Failed to update job with error: ${updateError.message}`);
+          }
+          return;
+        }
+        
+        const detectedBooks = detectionResult.books || [];
         console.log(`[detectBooksFromImage] Detected ${detectedBooks.length} books locally`);
         
-        await supabase
-          .from('detection_jobs')
-          .update({ progress: 50, updated_at: new Date().toISOString() })
-          .eq('id', job.id);
+        // Continue with book search and enrichment (60-80%)
+        // Search for book details (60-80% progress)
+        if (detectedBooks.length > 0) {
+          await onProgress('enriching_metadata', 60, `Searching database for ${detectedBooks.length} books...`);
+          
+          const { searchBookDetails } = await import('../services/bookSearch.js');
+          const bookSearchPromises = detectedBooks.map(async (book) => {
+            try {
+              const bookDetails = await searchBookDetails(book.title, book.author);
+              if (bookDetails && bookDetails.confidence >= 70) {
+                return { ...book, ...bookDetails };
+              }
+              return book;
+            } catch (err) {
+              console.error(`[detectBooksFromImage] Search failed for ${book.title}:`, err.message);
+              return book;
+            }
+          });
 
-        // Search for book details (90% progress)
-        const { searchBookDetails } = await import('../services/bookSearch.js');
-        const bookSearchPromises = detectedBooks.map(async (book) => {
+          const enrichedBooks = await Promise.all(bookSearchPromises);
+          
+          // Check ownership status (80-95%)
+          await onProgress('checking_ownership', 80, `Checking your book catalog...`);
+          
+          console.log(`[detectBooksFromImage] Checking ownership for user ${req.user.id}...`);
+          
+          // Initialize all books with alreadyOwned: false
+          enrichedBooks.forEach(book => {
+            book.alreadyOwned = false;
+          });
+
           try {
-            const bookDetails = await searchBookDetails(book.title, book.author);
-            if (bookDetails && bookDetails.confidence >= 70) {
-              return { ...book, ...bookDetails };
-            }
-            return book;
-          } catch (err) {
-            console.error(`[detectBooksFromImage] Search failed for ${book.title}:`, err.message);
-            return book;
-          }
-        });
+            // Get user's family
+            const { data: familyData, error: familyError } = await supabase
+              .from('users')
+              .select('family_id')
+              .eq('id', req.user.id)
+              .single();
 
-        const enrichedBooks = await Promise.all(bookSearchPromises);
-        
-        await supabase
-          .from('detection_jobs')
-          .update({ progress: 80, updated_at: new Date().toISOString() })
-          .eq('id', job.id);
+            if (familyError) {
+              console.log(`[detectBooksFromImage] User lookup warning: ${familyError.message} - skipping ownership check`);
+            } else if (familyData?.family_id) {
+              // Get all books in user's family catalog
+              const { data: ownedBooks, error: ownedError } = await supabase
+                .from('family_books')
+                .select(`
+                  book_catalog_id,
+                  book_catalog (
+                    title,
+                    author,
+                    series
+                  )
+                `)
+                .eq('family_id', familyData.family_id);
 
-        // Check ownership status
-        console.log(`[detectBooksFromImage] Checking ownership for user ${req.user.id}...`);
-        
-        // Initialize all books with alreadyOwned: false
-        enrichedBooks.forEach(book => {
-          book.alreadyOwned = false;
-        });
-
-        try {
-          // Get user's family
-          const { data: familyData, error: familyError } = await supabase
-            .from('users')
-            .select('family_id')
-            .eq('id', req.user.id)
-            .single();
-
-          if (familyError) {
-            console.log(`[detectBooksFromImage] User lookup warning: ${familyError.message} - skipping ownership check`);
-          } else if (familyData?.family_id) {
-            // Get all books in user's family catalog
-            const { data: ownedBooks, error: ownedError } = await supabase
-              .from('family_books')
-              .select(`
-                book_catalog_id,
-                book_catalog (
-                  title,
-                  author,
-                  series
-                )
-              `)
-              .eq('family_id', familyData.family_id);
-
-            if (ownedError) {
-              console.log(`[detectBooksFromImage] Owned books lookup warning: ${ownedError.message} - skipping ownership check`);
-            } else if (ownedBooks) {
-              // Create a set of owned book keys for quick lookup
-              const ownedKeys = new Set();
-              for (const owned of ownedBooks) {
-                const bookData = owned.book_catalog;
-                if (bookData) {
-                  const series = (bookData.series || '').toLowerCase().trim();
-                  const key = `${bookData.title.toLowerCase().trim()}|${(bookData.author || '').toLowerCase().trim()}|${series}`;
-                  ownedKeys.add(key);
+              if (ownedError) {
+                console.log(`[detectBooksFromImage] Owned books lookup warning: ${ownedError.message} - skipping ownership check`);
+              } else if (ownedBooks) {
+                // Create a set of owned book keys for quick lookup
+                const ownedKeys = new Set();
+                for (const owned of ownedBooks) {
+                  const bookData = owned.book_catalog;
+                  if (bookData) {
+                    const series = (bookData.series || '').toLowerCase().trim();
+                    const key = `${bookData.title.toLowerCase().trim()}|${(bookData.author || '').toLowerCase().trim()}|${series}`;
+                    ownedKeys.add(key);
+                  }
                 }
-              }
 
-              // Mark books as already owned
-              for (const book of enrichedBooks) {
-                const series = (book.series || '').toLowerCase().trim();
-                const key = `${book.title.toLowerCase().trim()}|${(book.author || '').toLowerCase().trim()}|${series}`;
-                book.alreadyOwned = ownedKeys.has(key);
-              }
+                // Mark books as already owned
+                for (const book of enrichedBooks) {
+                  const series = (book.series || '').toLowerCase().trim();
+                  const key = `${book.title.toLowerCase().trim()}|${(book.author || '').toLowerCase().trim()}|${series}`;
+                  book.alreadyOwned = ownedKeys.has(key);
+                }
 
-              console.log(`[detectBooksFromImage] Found ${ownedKeys.size} books in catalog, marked ${enrichedBooks.filter(b => b.alreadyOwned).length} as already owned`);
+                console.log(`[detectBooksFromImage] Found ${ownedKeys.size} books in catalog, marked ${enrichedBooks.filter(b => b.alreadyOwned).length} as already owned`);
+              }
             }
+          } catch (ownershipError) {
+            console.error(`[detectBooksFromImage] Ownership check failed: ${ownershipError.message} - continuing without ownership data`);
+            // Continue without ownership data - all books will have alreadyOwned: false
           }
-        } catch (ownershipError) {
-          console.error(`[detectBooksFromImage] Ownership check failed: ${ownershipError.message} - continuing without ownership data`);
-          // Continue without ownership data - all books will have alreadyOwned: false
-        }
 
-        await supabase
-          .from('detection_jobs')
-          .update({ progress: 90, updated_at: new Date().toISOString() })
-          .eq('id', job.id);
+          // Update job with results (95-100% complete)
+          await onProgress('finalizing', 95, 'Saving results...');
+          
+          const { error: updateError } = await supabase
+            .from('detection_jobs')
+            .update({
+              status: 'completed',
+              progress: 100,
+              result: {
+                books: enrichedBooks,
+                count: enrichedBooks.length
+              },
+              image_analysis_metadata: detectionResult.metadata,
+              stage: 'completed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', job.id);
 
-        // Update job with results (100% complete)
-        const { error: updateError } = await supabase
-          .from('detection_jobs')
-          .update({
-            status: 'completed',
-            progress: 100,
-            result: {
-              books: enrichedBooks,
-              count: enrichedBooks.length
-            },
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', job.id);
-
-        if (updateError) {
-          console.error(`[detectBooksFromImage] Failed to update job ${job.id}:`, updateError);
+          if (updateError) {
+            console.error(`[detectBooksFromImage] Failed to update job ${job.id}:`, updateError);
+          } else {
+            console.log(`[detectBooksFromImage] ✓ Local detection completed for job: ${job.id}`);
+          }
         } else {
-          console.log(`[detectBooksFromImage] ✓ Local detection completed for job: ${job.id}`);
+          // No books detected
+          console.warn('[detectBooksFromImage] No books detected in image');
+          
+          await supabase
+            .from('detection_jobs')
+            .update({
+              status: 'completed',
+              progress: 100,
+              result: {
+                books: [],
+                count: 0
+              },
+              image_analysis_metadata: detectionResult.metadata,
+              stage: 'completed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', job.id);
         }
 
       } catch (error) {
@@ -996,7 +1128,10 @@ export const detectBooksFromImage = asyncHandler(async (req, res) => {
           .from('detection_jobs')
           .update({
             status: 'failed',
+            error_code: 'UNEXPECTED_ERROR',
             error: error.message,
+            can_retry: true,
+            stage: 'failed_other',
             updated_at: new Date().toISOString()
           })
           .eq('id', job.id);
@@ -1095,9 +1230,32 @@ export const getDetectionJob = asyncHandler(async (req, res) => {
   }
 
   const { supabase } = await import('../db/adapter.js');
-  const { data: job, error } = await supabase
+  const { 
+    data: job, 
+    error 
+  } = await supabase
     .from('detection_jobs')
-    .select('id, status, progress, result, error, created_at, updated_at')
+    .select(`
+      id, 
+      status, 
+      progress, 
+      stage,
+      result, 
+      error_code,
+      error,
+      can_retry,
+      created_at, 
+      updated_at,
+      image_original_filename,
+      image_mime_type,
+      image_size_bytes,
+      image_base64_thumbnail,
+      image_uploaded_at,
+      image_storage_path,
+      image_storage_url,
+      image_storage_expires_at,
+      image_analysis_metadata
+    `)
     .eq('id', jobId)
     .eq('user_id', req.user.id)
     .single();
@@ -1107,18 +1265,67 @@ export const getDetectionJob = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: 'Job not found' });
   }
 
-  console.log(`[getDetectionJob] Job status: ${job.status}, progress: ${job.progress}%`);
+  console.log(`[getDetectionJob] Job status: ${job.status}, progress: ${job.progress}%, stage: ${job.stage}`);
+  
+  // If image storage URL is expired (or missing), try to refresh it
+  let imageUrl = job.image_storage_url;
+  if (job.image_storage_path && (!job.image_storage_expires_at || new Date(job.image_storage_expires_at) <= new Date())) {
+    try {
+      console.log(`[getDetectionJob] Refreshing expired image URL for job ${jobId}`);
+      const { refreshSignedUrl } = await import('../services/storageService.js');
+      const refreshed = await refreshSignedUrl(supabase, job.image_storage_path);
+      if (refreshed?.url) {
+        imageUrl = refreshed.url;
+        // Update the job with new URL and expiry
+        await supabase
+          .from('detection_jobs')
+          .update({
+            image_storage_url: refreshed.url,
+            image_storage_expires_at: refreshed.expiresAt
+          })
+          .eq('id', jobId);
+      }
+    } catch (refreshErr) {
+      console.error(`[getDetectionJob] Failed to refresh image URL: ${refreshErr.message}`);
+      // Continue with expired URL - client can request refresh
+    }
+  }
+  
+  // Build response with image information
+  const response = {
+    id: job.id,
+    status: job.status,
+    progress: job.progress,
+    stage: job.stage,
+    result: job.result,
+    error: job.error,
+    error_code: job.error_code,
+    can_retry: job.can_retry,
+    created_at: job.created_at,
+    updated_at: job.updated_at,
+    image: {
+      filename: job.image_original_filename,
+      mime_type: job.image_mime_type,
+      size_bytes: job.image_size_bytes,
+      thumbnail: job.image_base64_thumbnail, // Base64 thumbnail for quick display
+      uploaded_at: job.image_uploaded_at,
+      url: imageUrl, // Signed URL for full resolution image
+      expires_at: job.image_storage_expires_at,
+      storage_path: job.image_storage_path
+    },
+    analysis: job.image_analysis_metadata // Metadata from detection process
+  };
   
   if (job.status === 'completed' && job.result) {
     const bookCount = job.result?.books?.length || 0;
     console.log(`[getDetectionJob] ✓ Job completed with ${bookCount} books detected`);
   } else if (job.status === 'failed') {
-    console.error(`[getDetectionJob] ✗ Job failed: ${job.error}`);
+    console.error(`[getDetectionJob] ✗ Job failed with code ${job.error_code}: ${job.error}`);
   } else {
-    console.log(`[getDetectionJob] Job still processing...`);
+    console.log(`[getDetectionJob] Job still processing... Stage: ${job.stage}`);
   }
 
-  res.json(job);
+  res.json(response);
 });
 
 // OLD SYNCHRONOUS CODE BELOW - KEPT FOR REFERENCE/FALLBACK

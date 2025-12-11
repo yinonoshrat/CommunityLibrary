@@ -79,35 +79,107 @@ class HybridVisionService extends AIVisionService {
   /**
    * Detect books using OCR + AI inference
    * @param {Buffer} imageBuffer - The image data
-   * @returns {Promise<Array<{title: string, author: string}>>} - Array of detected books
+   * @param {Object} options - Options including progress callback
+   * @param {Function} options.onProgress - Callback: (stage, percentage, message) => void
+   * @returns {Promise<{books: Array, errorCode?: string, errorMessage?: string, canRetry?: boolean, metadata: Object}>} - Detection result with error handling
    */
-  async detectBooksFromImage(imageBuffer) {
+  async detectBooksFromImage(imageBuffer, options = {}) {
+    const onProgress = options.onProgress || (() => {});
+    const startTime = Date.now();
+    let ocrData = null;
+
     try {
       console.log('=== HybridVisionService.detectBooksFromImage ===');
       console.log('Image buffer size:', imageBuffer.length, 'bytes');
 
       // Validate image
-      this.validateImage(imageBuffer);
+      try {
+        this.validateImage(imageBuffer);
+      } catch (error) {
+        onProgress('failed_invalid', 0, 'Invalid image format');
+        return {
+          books: [],
+          errorCode: 'INVALID_IMAGE',
+          errorMessage: 'Invalid image format. Please upload a JPEG or PNG image.',
+          canRetry: false,
+          metadata: { errorAt: 'validation', duration_ms: Date.now() - startTime }
+        };
+      }
 
       // Step 1: Extract text using Google Cloud Vision OCR
+      onProgress('extracting_text', 15, 'Extracting text from image...');
       console.log('Step 1: Running OCR with Google Cloud Vision...');
-      const ocrData = await this.extractTextWithOCR(imageBuffer);
+      
+      try {
+        ocrData = await this.extractTextWithOCR(imageBuffer);
+      } catch (error) {
+        console.error('OCR failed:', error.message);
+        onProgress('failed_ocr', 20, 'Text extraction failed');
+        return {
+          books: [],
+          errorCode: 'OCR_FAILED',
+          errorMessage: 'Failed to extract text from image. Please try a clearer image.',
+          canRetry: true,
+          metadata: { errorAt: 'ocr', duration_ms: Date.now() - startTime, ocrError: error.message }
+        };
+      }
       
       if (!ocrData.fullText || ocrData.fullText.trim().length === 0) {
         console.warn('No text detected by OCR');
-        return [];
+        onProgress('analyzing_books', 50, 'No text found, checking for books...');
+        // Continue with image analysis even if no text detected
+        ocrData = { fullText: '', blocks: [] };
+      } else {
+        onProgress('extracting_text', 60, `Extracted ${ocrData.blocks.length} text blocks`);
+        console.log(`OCR extracted ${ocrData.fullText.length} characters in ${ocrData.blocks.length} text blocks`);
+        console.log('Sample OCR text:', ocrData.fullText.substring(0, 2000) + '...');
       }
-      
-      console.log(`OCR extracted ${ocrData.fullText.length} characters in ${ocrData.blocks.length} text blocks`);
-      console.log('Sample OCR text:', ocrData.fullText.substring(0, 2000) + '...');
 
       // Step 2: Use Gemini to infer books from OCR data + image
+      onProgress('analyzing_books', 65, 'Analyzing books with AI...');
       console.log('Step 2: Analyzing with Gemini to identify books...');
-      const books = await this.inferBooksWithGemini(imageBuffer, ocrData);
+      
+      let books;
+      try {
+        books = await this.inferBooksWithGemini(imageBuffer, ocrData);
+      } catch (error) {
+        console.error('AI analysis failed:', error.message);
+        
+        // Distinguish between timeout and other AI failures
+        const isTimeout = error.message?.includes('deadline') || error.message?.includes('timeout');
+        onProgress('failed_ai', 70, 'AI analysis failed');
+        
+        return {
+          books: [],
+          errorCode: isTimeout ? 'TIMEOUT' : 'AI_FAILED',
+          errorMessage: isTimeout 
+            ? 'Analysis took too long. Please try a simpler image.'
+            : 'Failed to identify books. Please try another image.',
+          canRetry: true,
+          metadata: { 
+            errorAt: 'ai_inference', 
+            duration_ms: Date.now() - startTime, 
+            aiError: error.message,
+            ocrBlocksCount: ocrData.blocks.length
+          }
+        };
+      }
       
       console.log(`Successfully identified ${books.length} books`);
+      onProgress('completed', 100, `Identified ${books.length} books`);
       
-      return books;
+      return {
+        books,
+        metadata: {
+          successfullyProcessed: true,
+          duration_ms: Date.now() - startTime,
+          ocrBlocksCount: ocrData.blocks.length,
+          booksDetected: books.length,
+          avgConfidence: books.length > 0 
+            ? books.reduce((sum, b) => sum + (b.confidence || 0.8), 0) / books.length 
+            : 0
+        }
+      };
 
     } catch (error) {
       console.error('Hybrid Vision error:', error);
@@ -119,7 +191,18 @@ class HybridVisionService extends AIVisionService {
         console.error('Error details:', error.details);
       }
       
-      throw new Error(`Failed to detect books: ${error.message}`);
+      onProgress('failed_other', 75, 'Unexpected error occurred');
+      return {
+        books: [],
+        errorCode: 'UNEXPECTED_ERROR',
+        errorMessage: 'An unexpected error occurred. Please try again.',
+        canRetry: true,
+        metadata: { 
+          errorAt: 'unknown', 
+          duration_ms: Date.now() - startTime,
+          error: error.message
+        }
+      };
     }
   }
 
@@ -246,9 +329,9 @@ class HybridVisionService extends AIVisionService {
 
         // Create structured text summary for Gemini
         const structuredText = this.formatStructuredOCR(ocrData);
-        const prompt = `You are analyzing a bookshelf image to identify book titles and authors.
+        const prompt = `You are an expert book librarian and image analyst. Your task is to analyze bookshelf images and extract ALL visible book information.
 
-I have already extracted the text visible in the image using OCR. The text is organized with positioning and orientation information:
+I have already extracted text visible in the image using OCR. The text is organized with positioning and orientation information:
 
 --- STRUCTURED OCR DATA START ---
 ${structuredText}
@@ -256,7 +339,7 @@ ${structuredText}
 
 Your task:
 1. Look at the image to see the physical books (spines, covers, arrangement)
-2. Use the structured OCR data to understand which text blocks belong together
+2. Use the structured OCR data to help understand which text blocks belong together
 3. Match text blocks to the books you see based on their position
 4. Group text that appears close together (same book spine/cover)
 5. For each book, identify the title and author from the grouped text and the image

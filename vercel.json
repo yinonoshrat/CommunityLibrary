@@ -5,8 +5,26 @@
     "api/index.js": {
       "memory": 1024,
       "maxDuration": 10
+    },
+    "api/cron/cleanup-detection-jobs.js": {
+      "memory": 512,
+      "maxDuration": 60
+    },
+    "api/cron/check-job-timeouts.js": {
+      "memory": 256,
+      "maxDuration": 30
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-detection-jobs",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/check-job-timeouts",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/:path*",

@@ -53,6 +53,9 @@ export default function BulkUpload() {
   const [success, setSuccess] = useState('');
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
   const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -89,6 +92,37 @@ export default function BulkUpload() {
     setDetectedBooks([]);
     setError('');
     setSuccess('');
+    setJobId(null);
+    setCanRetry(false);
+    setErrorCode(null);
+  };
+
+  const handleRetryDetection = async () => {
+    if (!jobId || !canRetry) return;
+    
+    try {
+      setError('');
+      setProgress(0);
+      setStatusMessage('מחזור עיבוד מחדש...');
+      setDetecting(true);
+      
+      // Call retry endpoint
+      const data = await apiCall(`/api/books/detect-job/${jobId}/retry`, {
+        method: 'POST',
+      });
+
+      if (data.success) {
+        // Start polling again
+        handleDetectBooks();
+      } else {
+        setError(data.error || 'שגיאה בחידוש העיבוד');
+        setDetecting(false);
+      }
+    } catch (err: any) {
+      console.error('Retry error:', err);
+      setError(err.message || 'שגיאה בחידוש העיבוד');
+      setDetecting(false);
+    }
   };
 
   const handleDetectBooks = async () => {
@@ -97,7 +131,7 @@ export default function BulkUpload() {
     try {
       setDetecting(true);
       setError('');
-      setProgress(10);
+      setProgress(0);
       setStatusMessage('מעלה תמונה...');
 
       const formData = new FormData();
@@ -111,8 +145,9 @@ export default function BulkUpload() {
       });
 
       const jobId = data.jobId;
-      setProgress(20);
-      setStatusMessage('מזהה ספרים עם בינה מלאכותית...');
+      setJobId(jobId);
+      setCanRetry(false);
+      setErrorCode(null);
 
       // Poll for job completion
       const pollInterval = setInterval(async () => {
@@ -121,7 +156,28 @@ export default function BulkUpload() {
             method: 'GET',
           });
 
-          setProgress(job.progress || 20);
+          // Use backend progress value directly (0-100)
+          setProgress(job.progress || 0);
+
+          // Update status message based on stage
+          if (job.stage) {
+            const stageMessages: Record<string, string> = {
+              pending: 'מחכה לעיבוד...',
+              uploading: 'מעלה תמונה...',
+              extracting_text: 'מחלץ טקסט מהתמונה...',
+              analyzing_books: 'מזהה ספרים עם בינה מלאכותית...',
+              enriching_metadata: 'מחפש פרטים נוספים...',
+              checking_ownership: 'בודק את אוספך...',
+              finalizing: 'מוצא תוצאות...',
+              completed: 'סיום!',
+              failed_invalid: 'תמונה לא חוקית',
+              failed_ocr: 'שגיאה בחילוץ טקסט',
+              failed_ai: 'שגיאה בזיהוי ספרים',
+              failed_timeout: 'פגמה בזמן העיבוד',
+              failed_other: 'שגיאה בלתי צפויה'
+            };
+            setStatusMessage(stageMessages[job.stage] || 'מעבד...');
+          }
 
           if (job.status === 'completed' && job.result) {
             clearInterval(pollInterval);
@@ -142,18 +198,32 @@ export default function BulkUpload() {
             setDetecting(false);
           } else if (job.status === 'failed') {
             clearInterval(pollInterval);
-            setError(job.error || 'שגיאה בזיהוי ספרים מהתמונה');
+            
+            // Store error code and retry capability
+            setErrorCode(job.error_code || null);
+            setCanRetry(job.can_retry === true);
+            
+            // Use error code if available for user-friendly message
+            let errorMessage = job.error || 'שגיאה בזיהוי ספרים מהתמונה';
+            if (job.error_code) {
+              const errorMessages: Record<string, string> = {
+                INVALID_IMAGE: 'תמונה לא חוקית. אנא העלה תמונה JPEG או PNG.',
+                OCR_FAILED: 'לא הצלחנו לחלץ טקסט מהתמונה. נסה תמונה ברורה יותר.',
+                AI_FAILED: 'לא הצלחנו לזהות ספרים. נסה תמונה אחרת.',
+                TIMEOUT: 'המעבד לקח יותר מדי זמן. נסה תמונה פשוטה יותר.',
+                NO_BOOKS_DETECTED: 'לא זוהו ספרים בתמונה. נסה תמונה אחרת.'
+              };
+              errorMessage = errorMessages[job.error_code] || errorMessage;
+            }
+            
+            setError(errorMessage);
             setDetecting(false);
             setProgress(0);
             setStatusMessage('');
           } else {
-            // Still processing - update status message
-            if (job.progress < 50) {
-              setStatusMessage('מזהה ספרים עם בינה מלאכותית...');
-            } else if (job.progress < 90) {
-              setStatusMessage('מחפש פרטים נוספים באינטרנט...');
-            } else {
-              setStatusMessage('כמעט סיימנו...');
+            // Still processing - smooth progress updates
+            if (!job.progress || job.progress === 0) {
+              setStatusMessage('מחכה לעיבוד...');
             }
           }
         } catch (pollError: any) {
@@ -259,7 +329,23 @@ export default function BulkUpload() {
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert 
+          severity="error" 
+          sx={{ mb: 2 }} 
+          onClose={() => setError('')}
+          action={
+            canRetry && (
+              <Button 
+                color="inherit" 
+                size="small" 
+                onClick={handleRetryDetection}
+                disabled={detecting}
+              >
+                נסה שוב
+              </Button>
+            )
+          }
+        >
           {error}
         </Alert>
       )}
