@@ -4,6 +4,16 @@ import { config } from 'dotenv'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
+// Add global error handlers to catch crashes
+process.on('uncaughtException', (err) => {
+  console.error('CRITICAL: UNCAUGHT EXCEPTION:', err);
+  console.error(err.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('CRITICAL: UNHANDLED REJECTION:', reason);
+});
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 

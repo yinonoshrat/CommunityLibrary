@@ -93,7 +93,7 @@ ON storage_audit_log
 FOR INSERT
 WITH CHECK (true);
 
--- 3. Create a view for storage analytics based on our audit log
+-- 8. Create a view for storage analytics
 CREATE OR REPLACE VIEW storage_usage_by_user AS
 SELECT
   user_id,
@@ -110,19 +110,38 @@ WHERE operation = 'upload'
 AND created_at > NOW() - INTERVAL '30 days'
 GROUP BY user_id;
 
--- 4. Helper function to check if image should be cleaned up
--- Returns true if image is older than 7 days
-CREATE OR REPLACE FUNCTION should_cleanup_image(upload_timestamp TIMESTAMP WITH TIME ZONE)
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN (NOW() - upload_timestamp) > INTERVAL '7 days';
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+-- 9. Create a view for cleanup targets
+CREATE OR REPLACE VIEW cleanup_targets AS
+SELECT
+  o.id,
+  o.name,
+  o.bucket_id,
+  o.owner,
+  o.created_at,
+  o.updated_at,
+  o.metadata,
+  (NOW() - o.created_at) as age_days,
+  CASE
+    WHEN (NOW() - o.created_at) > INTERVAL '7 days' THEN true
+    ELSE false
+  END as eligible_for_cleanup
+FROM storage.objects o
+WHERE o.bucket_id = 'detection-job-images'
+  AND (NOW() - o.created_at) > INTERVAL '7 days'
+ORDER BY o.created_at ASC;
+
+-- 10. Grant necessary permissions
+-- Note: These grants are typically handled by Supabase roles configuration
+-- Uncomment if you need explicit permission management:
+/*
+GRANT SELECT ON storage_audit_log TO authenticated;
+GRANT SELECT ON storage_usage_by_user TO authenticated;
+GRANT SELECT ON cleanup_targets TO postgres;
+*/
 
 -- Comments for documentation
 COMMENT ON TABLE storage_audit_log IS 'Audit trail for all storage operations on detection job images';
 COMMENT ON COLUMN storage_audit_log.operation IS 'Type of operation: upload, download, or delete';
 COMMENT ON COLUMN storage_audit_log.reason IS 'Reason for operation, e.g., cleanup job, user initiated, retention policy';
 COMMENT ON VIEW storage_usage_by_user IS 'Shows storage usage by user for quota enforcement and monitoring';
-COMMENT ON FUNCTION should_cleanup_image(TIMESTAMP WITH TIME ZONE) IS 'Helper to determine if an image is eligible for cleanup (>7 days old)';
-COMMENT ON TABLE bucket_configuration IS 'Documents storage bucket configuration and setup';
+COMMENT ON VIEW cleanup_targets IS 'Shows objects eligible for cleanup based on retention policy';

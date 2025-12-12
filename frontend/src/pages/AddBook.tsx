@@ -9,7 +9,6 @@ import {
   Grid,
   Paper,
   Alert,
-  AlertTitle,
   CircularProgress,
   Card,
   CardContent,
@@ -19,31 +18,21 @@ import {
   Divider,
   ToggleButtonGroup,
   ToggleButton,
-  LinearProgress,
-  Stack,
-  IconButton,
-  Checkbox,
-  Dialog,
-  DialogContent,
 } from '@mui/material';
 import {
   Save as SaveIcon,
   Search as SearchIcon,
-  Add as AddIcon,
-  CloudUpload as UploadIcon,
   CameraAlt as CameraIcon,
-  Delete as DeleteIcon,
   CheckCircle as CheckIcon,
   Edit as EditIcon,
-  ZoomIn as ZoomInIcon,
-  Close as CloseIcon,
-  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiCall } from '../utils/apiCall';
 import { searchBooks, type BookSearchResult } from '../utils/bookSearch';
 import { useCreateBook } from '../hooks/useBookMutations';
+import ImageUploadManager from '../components/ImageUploadManager';
+import { DetectedBooksList, type DetectedBook } from '../components/DetectedBooksList';
 
 interface BookFormData {
   title: string;
@@ -86,28 +75,27 @@ const AGE_LEVELS = [
   'כל הגילאים',
 ];
 
-interface DetectedBook {
-  title: string;
-  author: string;
-  publisher?: string;
-  publish_year?: number;
-  pages?: number;
-  description?: string;
-  cover_image_url?: string;
-  isbn?: string;
-  genre?: string;
-  age_range?: string;
-  language?: string;
-  confidence?: 'high' | 'medium' | 'low';
-  confidenceScore?: number;
-  selected?: boolean;
-  tempId?: string;
-  expanded?: boolean;
-  series?: string;
-  series_number?: number;
-  source?: 'ai' | 'manual';
-  alreadyOwned?: boolean;
-}
+const normalizeConfidence = (conf: any): 'high' | 'medium' | 'low' => {
+  if (typeof conf === 'string') {
+    const lower = conf.toLowerCase();
+    if (lower === 'high' || lower === 'medium' || lower === 'low') {
+      return lower;
+    }
+  }
+  if (typeof conf === 'number') {
+    // Handle 0-1 range
+    if (conf <= 1) {
+      if (conf >= 0.8) return 'high';
+      if (conf >= 0.5) return 'medium';
+      return 'low';
+    }
+    // Handle 0-100 range
+    if (conf >= 80) return 'high';
+    if (conf >= 50) return 'medium';
+    return 'low';
+  }
+  return 'low';
+};
 
 export default function AddBook() {
   const navigate = useNavigate();
@@ -144,19 +132,110 @@ export default function AddBook() {
   });
   
   // Toggle between single and bulk upload
-  const [uploadMode, setUploadMode] = useState<'single' | 'bulk'>('single');
+  const [uploadMode, setUploadMode] = useState<'single' | 'bulk'>('bulk');
   
   // Bulk upload state
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>('');
-  const [detecting, setDetecting] = useState(false);
   const [detectedBooks, setDetectedBooks] = useState<DetectedBook[]>([]);
+  const [initialJobs, setInitialJobs] = useState<any[]>([]);
+  const [userBooks, setUserBooks] = useState<any[]>([]);
   const [adding, setAdding] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [zoomDialogOpen, setZoomDialogOpen] = useState(false);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [loadingJobs, setLoadingJobs] = useState(false);
   const [refreshingBooks, setRefreshingBooks] = useState<Set<string>>(new Set());
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+
+  // Helper to check if book is already owned
+  const checkIfOwned = (book: any, currentBooks: any[]) => {
+    // Check by ISBN if available
+    if (book.isbn && currentBooks.some(ub => ub.isbn === book.isbn)) {
+      return true;
+    }
+    
+    // Check by Title + Author (fuzzy match)
+    const normalize = (str: string) => str?.toLowerCase().replace(/[^\w\u0590-\u05FF]/g, '') || '';
+    const bookTitle = normalize(book.title);
+    const bookAuthor = normalize(book.author);
+    
+    if (!bookTitle) return false;
+
+    return currentBooks.some(ub => {
+      const ubTitle = normalize(ub.title);
+      const ubAuthor = normalize(ub.author);
+      // Match title AND (author matches OR author is missing in one of them)
+      return ubTitle === bookTitle && (ubAuthor === bookAuthor || !bookAuthor || !ubAuthor);
+    });
+  };
+
+  // Fetch existing jobs when switching to bulk mode
+  useEffect(() => {
+    if (uploadMode === 'bulk') {
+      const fetchData = async () => {
+        setLoadingJobs(true);
+        try {
+          // 1. Fetch user's existing books for ownership check
+          let currentUserBooks: any[] = [];
+          try {
+            const booksResponse = await apiCall<{ books: any[] }>('/api/books?view=my&limit=1000');
+            if (booksResponse && booksResponse.books) {
+              currentUserBooks = booksResponse.books;
+              setUserBooks(currentUserBooks);
+            }
+          } catch (err) {
+            console.error('Failed to fetch user books:', err);
+          }
+
+          // 2. Fetch detection jobs
+          const jobs = await apiCall<any[]>('/api/books/detect-jobs');
+          
+          // Separate completed jobs from active ones
+          const completedJobs = jobs.filter(job => job.status === 'completed');
+          
+          // Set ALL jobs for ImageUploadManager so user sees history
+          setInitialJobs(jobs);
+          
+          // Auto-select the most recent completed job if none selected
+          if (!selectedJobId && completedJobs.length > 0) {
+            // Sort by created_at desc
+            const sortedJobs = [...completedJobs].sort((a, b) => 
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+            setSelectedJobId(sortedJobs[0].id);
+          }
+          
+          // Process completed jobs to extract books
+          const allDetectedBooks: DetectedBook[] = [];
+          completedJobs.forEach(job => {
+            if (job.result && job.result.books) {
+              job.result.books.forEach((book: any, index: number) => {
+                const confidence = normalizeConfidence(book.confidence);
+                const isOwned = checkIfOwned(book, currentUserBooks);
+                
+                allDetectedBooks.push({
+                  ...book,
+                  confidence,
+                  confidenceScore: typeof book.confidence === 'number' ? book.confidence : book.confidenceScore,
+                  source: 'ai',
+                  jobId: job.id,
+                  tempId: `temp-${job.id}-${index}-${Date.now()}`,
+                  alreadyOwned: isOwned,
+                  selected: confidence !== 'low' && !isOwned,
+                });
+              });
+            }
+          });
+          
+          if (allDetectedBooks.length > 0) {
+             setDetectedBooks(allDetectedBooks);
+          }
+        } catch (err) {
+          console.error('Failed to fetch data:', err);
+        } finally {
+          setLoadingJobs(false);
+        }
+      };
+      
+      fetchData();
+    }
+  }, [uploadMode]);
   
   // Book search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -328,162 +407,103 @@ export default function AddBook() {
   };
 
   // Bulk upload handlers
-  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      setError('נא לבחור קובץ תמונה בלבד');
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setError('גודל הקובץ חורג מ-10MB');
-      return;
-    }
-
-    setSelectedImage(file);
-    setError(null);
-    setSuccess(false);
-    setDetectedBooks([]);
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleRemoveImage = () => {
-    // Cancel any in-flight detection request
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-    }
+  const handleUploadComplete = (jobId: string, result: any) => {
+    console.log('Upload complete:', jobId, result);
     
-    setSelectedImage(null);
-    setImagePreview('');
-    setDetectedBooks([]);
-    setError(null);
-    setSuccess(false);
-    setDetecting(false);
-    setProgress(0);
-  };
-
-  const handleDetectBooks = async () => {
-    if (!selectedImage) return;
-
-    let pollInterval: number | null = null;
-
-    try {
-      setDetecting(true);
-      setError(null);
-      setProgress(10);
-      setStatusMessage('מעלה תמונה...');
-
-      const formData = new FormData();
-      formData.append('image', selectedImage);
-
-      // Start detection job (returns immediately with jobId)
-      const data = await apiCall('/api/books/detect-from-image', {
-        method: 'POST',
-        body: formData,
+    if (result.result && result.result.books && result.result.books.length > 0) {
+      // Normalize books first
+      const normalizedBooks = result.result.books.map((book: any) => {
+        const isOwned = checkIfOwned(book, userBooks);
+        return {
+          ...book,
+          confidence: normalizeConfidence(book.confidence),
+          confidenceScore: typeof book.confidence === 'number' ? book.confidence : book.confidenceScore,
+          alreadyOwned: isOwned
+        };
       });
 
-      const jobId = data.jobId;
-      setProgress(20);
-      setStatusMessage('מזהה ספרים עם בינה מלאכותית...');
+      // Sort books: not owned first, then by confidence, owned books at the end
+      const sortedBooks = normalizedBooks.sort((a: DetectedBook, b: DetectedBook) => {
+        // Already owned books go to the end
+        if (a.alreadyOwned && !b.alreadyOwned) return 1;
+        if (!a.alreadyOwned && b.alreadyOwned) return -1;
+        
+        // Within same ownership status, sort by confidence
+        const confidenceOrder = { high: 3, medium: 2, low: 1 };
+        return (confidenceOrder[b.confidence || 'low'] || 0) - (confidenceOrder[a.confidence || 'low'] || 0);
+      });
 
-      // Poll for job completion
-      pollInterval = setInterval(async () => {
-        try {
-          const job = await apiCall(`/api/books/detect-job/${jobId}`, {
-            method: 'GET',
-          });
+      const booksWithSelection = sortedBooks.map((book: DetectedBook, index: number) => ({
+        ...book,
+        // Auto-select high and medium confidence books that are NOT already owned
+        selected: book.confidence !== 'low' && !book.alreadyOwned,
+        tempId: `temp-${jobId}-${index}-${Date.now()}`,
+        expanded: false,
+        source: 'ai' as const,
+        jobId: jobId,
+      }));
+      
+      setDetectedBooks(prev => [...prev, ...booksWithSelection]);
+      
+      // Auto-select this new job
+      setSelectedJobId(jobId);
 
-          setProgress(job.progress || 20);
+      const highCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'high' && !b.alreadyOwned).length;
+      const mediumCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'medium' && !b.alreadyOwned).length;
+      const lowCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'low' && !b.alreadyOwned).length;
+      const ownedCount = booksWithSelection.filter((b: DetectedBook) => b.alreadyOwned).length;
 
-          if (job.status === 'completed' && job.result) {
-            if (pollInterval) clearInterval(pollInterval);
-            setProgress(100);
+      let message = `נוספו ${result.result.count} ספרים לרשימה! `;
+      if (highCount || mediumCount || lowCount) {
+        message += `${highCount} בדיוק גבוה, ${mediumCount} בדיוק בינוני, ${lowCount} בדיוק נמוך`;
+      }
+      if (ownedCount) {
+        message += ownedCount > 0 ? `. ${ownedCount} כבר קיימים בספריה` : '';
+      }
 
-            if (job.result.books && job.result.books.length > 0) {
-              // Sort books: not owned first, then by confidence, owned books at the end
-              const sortedBooks = [...job.result.books].sort((a: DetectedBook, b: DetectedBook) => {
-                // Already owned books go to the end
-                if (a.alreadyOwned && !b.alreadyOwned) return 1;
-                if (!a.alreadyOwned && b.alreadyOwned) return -1;
-                
-                // Within same ownership status, sort by confidence
-                const confidenceOrder = { high: 3, medium: 2, low: 1 };
-                return (confidenceOrder[b.confidence || 'low'] || 0) - (confidenceOrder[a.confidence || 'low'] || 0);
-              });
-
-              const booksWithSelection = sortedBooks.map((book: DetectedBook, index: number) => ({
-                ...book,
-                // Auto-select high and medium confidence books that are NOT already owned
-                selected: book.confidence !== 'low' && !book.alreadyOwned,
-                tempId: `temp-${Date.now()}-${index}`,
-                expanded: false,
-                source: 'ai' as const,
-              }));
-              setDetectedBooks(booksWithSelection);
-
-              const highCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'high' && !b.alreadyOwned).length;
-              const mediumCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'medium' && !b.alreadyOwned).length;
-              const lowCount = booksWithSelection.filter((b: DetectedBook) => b.confidence === 'low' && !b.alreadyOwned).length;
-              const ownedCount = booksWithSelection.filter((b: DetectedBook) => b.alreadyOwned).length;
-
-              let message = `זוהו ${job.result.count} ספרים בתמונה! `;
-              if (highCount || mediumCount || lowCount) {
-                message += `${highCount} בדיוק גבוה, ${mediumCount} בדיוק בינוני, ${lowCount} בדיוק נמוך`;
-              }
-              if (ownedCount) {
-                message += ownedCount > 0 ? `. ${ownedCount} כבר קיימים בספריה` : '';
-              }
-
-              setSuccessMessage(message);
-              setSuccess(true);
-              setStatusMessage('');
-            } else {
-              setError('לא זוהו ספרים בתמונה. נסה תמונה אחרת או הוסף ספרים ידנית.');
-              setStatusMessage('');
-            }
-            setDetecting(false);
-          } else if (job.status === 'failed') {
-            if (pollInterval) clearInterval(pollInterval);
-            setError(job.error || 'שגיאה בזיהוי ספרים מהתמונה');
-            setDetecting(false);
-            setProgress(0);
-            setStatusMessage('');
-          } else {
-            // Still processing - update status message
-            if (job.progress < 50) {
-              setStatusMessage('מזהה ספרים עם בינה מלאכותית...');
-            } else if (job.progress < 90) {
-              setStatusMessage('מחפש פרטים נוספים באינטרנט...');
-            } else {
-              setStatusMessage('כמעט סיימנו...');
-            }
-          }
-        } catch (pollError: any) {
-          console.error('Polling error:', pollError);
-          if (pollInterval) clearInterval(pollInterval);
-          setError('שגיאה בבדיקת סטטוס. נסה שוב.');
-          setDetecting(false);
-          setProgress(0);
-          setStatusMessage('');
-        }
-      }, 2000); // Poll every 2 seconds
-
-    } catch (err: any) {
-      console.error('Detection error:', err);
-      if (pollInterval) clearInterval(pollInterval);
-      setError(err.message || 'שגיאה בזיהוי ספרים מהתמונה');
-      setDetecting(false);
-      setProgress(0);
-      setStatusMessage('');
+      setSuccessMessage(message);
+      setSuccess(true);
     }
+  };
+
+  const handleUploadError = (jobId: string, errorMsg: string) => {
+    console.error('Upload error:', jobId, errorMsg);
+    setError(`שגיאה בזיהוי ספרים (משימה ${jobId}): ${errorMsg}`);
+  };
+
+  const handleJobDelete = async (jobId: string) => {
+    try {
+      // Call API to delete job
+      await apiCall(`/api/books/detect-job/${jobId}`, { method: 'DELETE' });
+      
+      // Remove books associated with this job
+      setDetectedBooks(prev => prev.filter(book => book.jobId !== jobId));
+      
+      // Remove job from initialJobs if present
+      setInitialJobs(prev => prev.filter(job => job.id !== jobId));
+      
+      // Clear selection if this job was selected
+      if (selectedJobId === jobId) {
+        setSelectedJobId(null);
+      }
+      
+      console.log(`Job ${jobId} deleted successfully`);
+    } catch (err) {
+      console.error('Failed to delete job:', err);
+      // Even if API fails, we might want to remove from UI? 
+      // Better to show error
+      setError('שגיאה במחיקת המשימה');
+    }
+  };
+
+  const handleClearAll = () => {
+    if (selectedJobId) {
+      setSelectedJobId(null);
+    } else {
+      setDetectedBooks([]);
+    }
+    setError(null);
+    setSuccess(false);
   };
 
   const handleAddManualDetectedBook = () => {
@@ -601,19 +621,44 @@ export default function AddBook() {
   };
 
   const handleSelectAll = () => {
-    // Select all books that are not already owned
-    setDetectedBooks(prevBooks => prevBooks.map(book => ({ 
-      ...book, 
-      selected: !book.alreadyOwned 
-    })));
+    setDetectedBooks(prevBooks => prevBooks.map(book => {
+      // If filtering is active, only affect books in the current job
+      if (selectedJobId) {
+        // Use String comparison to be safe against type mismatches
+        if (String(book.jobId) !== String(selectedJobId)) {
+          return book;
+        }
+      }
+      
+      // Don't select if already owned
+      if (book.alreadyOwned) {
+        return book;
+      }
+
+      return { 
+        ...book, 
+        selected: true 
+      };
+    }));
   };
 
   const handleDeselectAll = () => {
-    setDetectedBooks(prevBooks => prevBooks.map(book => ({ ...book, selected: false })));
+    setDetectedBooks(prevBooks => prevBooks.map(book => {
+      if (selectedJobId) {
+        if (String(book.jobId) !== String(selectedJobId)) {
+          return book;
+        }
+      }
+      return { ...book, selected: false };
+    }));
   };
 
   const handleBulkAdd = async () => {
-    const selectedBooks = detectedBooks.filter(book => book.selected);
+    const booksToConsider = selectedJobId 
+      ? detectedBooks.filter(b => b.jobId === selectedJobId)
+      : detectedBooks;
+
+    const selectedBooks = booksToConsider.filter(book => book.selected);
 
     if (selectedBooks.length === 0) {
       setError('נא לבחור לפחות ספר אחד להוספה');
@@ -698,10 +743,22 @@ export default function AddBook() {
         setSuccessMessage(resultMessage);
         setSuccess(true);
         
-        if (skipped === 0) {
+        // If we are in a specific job context, delete the job
+        if (selectedJobId) {
+          try {
+            await apiCall(`/api/books/detect-job/${selectedJobId}`, { method: 'DELETE' });
+            
+            // Remove job from UI
+            setInitialJobs(prev => prev.filter(job => job.id !== selectedJobId));
+            setDetectedBooks(prev => prev.filter(book => book.jobId !== selectedJobId));
+            setSelectedJobId(null);
+            
+          } catch (err) {
+            console.error('Failed to delete job:', err);
+          }
+        } else if (skipped === 0) {
           // Perfect success - navigate away
           setDetectedBooks([]);
-          setSelectedImage(null);
           setTimeout(() => {
             navigate('/books');
           }, 2000);
@@ -728,6 +785,14 @@ export default function AddBook() {
       setAdding(false);
     }
   };
+
+  const handleJobSelect = (jobId: string) => {
+    setSelectedJobId(prev => prev === jobId ? null : jobId);
+  };
+
+  const visibleBooks = selectedJobId 
+    ? detectedBooks.filter(b => b.jobId === selectedJobId)
+    : detectedBooks.filter(b => b.source === 'manual'); // Show manual books if no job selected
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -783,442 +848,41 @@ export default function AddBook() {
         <>
           <Box mb={2}>
             <Typography variant="body2" color="text.secondary">
-              צלם או העלה תמונה של מדף הספרים שלך, ואנחנו נזהה את הספרים באמצעות בינה מלאכותית
+              צלם או העלה תמונות של מדף הספרים שלך, ואנחנו נזהה את הספרים באמצעות בינה מלאכותית.
+              ניתן להעלות מספר תמונות במקביל.
             </Typography>
           </Box>
 
-          {/* Image Upload Section */}
-          {!selectedImage && (
-            <Paper sx={{ p: 4, textAlign: 'center', mb: 3 }}>
-              <Stack spacing={2} alignItems="center">
-                <input
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  id="upload-image"
-                  type="file"
-                  onChange={handleImageSelect}
-                />
-                <label htmlFor="upload-image">
-                  <Button
-                    variant="contained"
-                    component="span"
-                    startIcon={<UploadIcon />}
-                    size="large"
-                  >
-                    בחר תמונה
-                  </Button>
-                </label>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <ImageUploadManager
+              initialJobs={initialJobs}
+              onUploadComplete={handleUploadComplete}
+              onUploadError={handleUploadError}
+              maxFileSize={10 * 1024 * 1024}
+              acceptedFormats={['image/jpeg', 'image/png', 'image/webp', 'image/heic']}
+              selectedJobId={selectedJobId}
+              onJobSelect={handleJobSelect}
+              onJobDelete={handleJobDelete}
+              loading={loadingJobs}
+            />
+          </Paper>
 
-                <input
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  id="capture-image"
-                  type="file"
-                  capture="environment"
-                  onChange={handleImageSelect}
-                />
-                <label htmlFor="capture-image">
-                  <Button
-                    variant="outlined"
-                    component="span"
-                    startIcon={<CameraIcon />}
-                    size="large"
-                  >
-                    צלם תמונה
-                  </Button>
-                </label>
-
-                <Typography variant="body2" color="text.secondary">
-                  גודל מקסימלי: 10MB
-                </Typography>
-              </Stack>
-            </Paper>
-          )}
-
-          {/* Image Preview and Detection */}
-          {selectedImage && (
-            <Paper sx={{ p: 3, mb: 3 }}>
-              <Box sx={{ position: 'relative', mb: 2 }}>
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  style={{
-                    width: '100%',
-                    maxHeight: '400px',
-                    objectFit: 'contain',
-                    borderRadius: '8px',
-                  }}
-                />
-                <IconButton
-                  sx={{ 
-                    position: 'absolute', 
-                    top: 8, 
-                    right: 8, 
-                    bgcolor: 'error.light',
-                    color: 'white',
-                    '&:hover': {
-                      bgcolor: 'error.main',
-                    }
-                  }}
-                  onClick={handleRemoveImage}
-                  title="בטל הוספה"
-                >
-                  <CloseIcon />
-                </IconButton>
-                <IconButton
-                  sx={{ position: 'absolute', top: 8, left: 8, bgcolor: 'background.paper' }}
-                  onClick={() => setZoomDialogOpen(true)}
-                >
-                  <ZoomInIcon />
-                </IconButton>
-              </Box>
-
-              {detecting && (
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    {statusMessage || 'מזהה ספרים...'}
-                  </Typography>
-                  <LinearProgress variant="determinate" value={progress} />
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                    {progress}% הושלם
-                  </Typography>
-                </Box>
-              )}
-
-              {!detectedBooks.length && (
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={handleDetectBooks}
-                  disabled={detecting}
-                  startIcon={detecting ? <CircularProgress size={20} /> : <CheckIcon />}
-                  sx={{ py: 1.5 }}
-                >
-                  {detecting ? 'מזהה...' : 'זהה ספרים'}
-                </Button>
-              )}
-            </Paper>
-          )}
-
-          {/* Detected Books List */}
-          {detectedBooks.length > 0 && (
-            <Paper sx={{ p: 3 }}>
-              <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Box>
-                  <Typography variant="h6">
-                    ספרים שזוהו ({detectedBooks.filter(b => b.selected).length}/{detectedBooks.length})
-                  </Typography>
-                  {detectedBooks.some(b => b.alreadyOwned) && (
-                    <Typography variant="caption" color="text.secondary">
-                      {detectedBooks.filter(b => b.alreadyOwned).length} ספרים כבר קיימים בספרייה (מוצגים בסוף הרשימה)
-                    </Typography>
-                  )}
-                </Box>
-                <Box>
-                  <Button size="small" onClick={handleSelectAll} sx={{ mr: 1 }}>
-                    בחר הכל
-                  </Button>
-                  <Button size="small" onClick={handleDeselectAll}>
-                    בטל הכל
-                  </Button>
-                </Box>
-              </Box>
-
-              <Stack spacing={2} sx={{ mb: 3 }}>
-                {detectedBooks.map((book) => (
-                  <Paper
-                    key={book.tempId}
-                    variant="outlined"
-                    sx={{
-                      p: 2,
-                      opacity: book.alreadyOwned ? 0.6 : book.selected ? 1 : 0.5,
-                      border: book.selected ? 2 : 1,
-                      borderColor: book.selected ? 'primary.main' : 'divider',
-                      bgcolor: book.alreadyOwned 
-                        ? '#f5f5f5'
-                        : book.confidence === 'high' 
-                          ? 'success.50' 
-                          : book.confidence === 'medium' 
-                            ? 'warning.50' 
-                            : 'grey.50',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                      <Checkbox
-                        checked={book.selected}
-                        onChange={() => handleToggleBook(book.tempId!)}
-                        sx={{ mt: 0.5 }}
-                        disabled={book.alreadyOwned}
-                      />
-                      <Box sx={{ flexGrow: 1 }}>
-                        {/* Header with title, author, confidence badge, and owned status */}
-                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
-                          {book.alreadyOwned && (
-                            <Box
-                              sx={{
-                                px: 1,
-                                py: 0.5,
-                                borderRadius: 1,
-                                bgcolor: 'grey.600',
-                                color: 'white',
-                                fontSize: '0.75rem',
-                                fontWeight: 'bold',
-                              }}
-                            >
-                              כבר קיים
-                            </Box>
-                          )}
-                          <Box
-                            sx={{
-                              px: 1,
-                              py: 0.5,
-                              borderRadius: 1,
-                              bgcolor: book.confidence === 'high' ? 'success.main' : book.confidence === 'medium' ? 'warning.main' : 'grey.500',
-                              color: 'white',
-                              fontSize: '0.75rem',
-                              fontWeight: 'bold',
-                            }}
-                          >
-                            {book.confidence === 'high' ? 'דיוק גבוה' : book.confidence === 'medium' ? 'דיוק בינוני' : 'דיוק נמוך'}
-                          </Box>
-                          {book.cover_image_url && (
-                            <img
-                              src={book.cover_image_url}
-                              alt={book.title}
-                              style={{ width: 30, height: 45, objectFit: 'cover', borderRadius: 4 }}
-                            />
-                          )}
-                        </Box>
-
-                        <TextField
-                          fullWidth
-                          value={book.title}
-                          onChange={(e) => handleEditBook(book.tempId!, 'title', e.target.value)}
-                          variant="outlined"
-                          size="small"
-                          sx={{ mb: 1 }}
-                          label="שם הספר"
-                          dir="auto"
-                          inputProps={{ dir: 'auto' }}
-                        />
-                        <TextField
-                          fullWidth
-                          value={book.author || ''}
-                          onChange={(e) => handleEditBook(book.tempId!, 'author', e.target.value)}
-                          placeholder="מחבר (אופציונלי)"
-                          variant="outlined"
-                          size="small"
-                          label="מחבר"
-                          dir="auto"
-                          inputProps={{ dir: 'auto' }}
-                        />
-
-                        {/* Expandable details section */}
-                        {book.expanded && (
-                          <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-                            <Grid container spacing={2}>
-                              <Grid size={{ xs: 12, md: 6 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  label="סדרה"
-                                  value={book.series || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'series', e.target.value)}
-                                  dir="auto"
-                                  inputProps={{ dir: 'auto' }}
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 6 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  type="number"
-                                  label="מספר כרך"
-                                  value={book.series_number || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'series_number', parseInt(e.target.value) || '')}
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 6 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  label="ISBN"
-                                  value={book.isbn || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'isbn', e.target.value)}
-                                  dir="auto"
-                                  inputProps={{ dir: 'auto' }}
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 6 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  type="number"
-                                  label="שנת פרסום"
-                                  value={book.publish_year || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'publish_year', parseInt(e.target.value) || '')}
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 6 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  label="הוצאה לאור"
-                                  value={book.publisher || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'publisher', e.target.value)}
-                                  dir="auto"
-                                  inputProps={{ dir: 'auto' }}
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 6 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  type="number"
-                                  label="מספר עמודים"
-                                  value={book.pages || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'pages', parseInt(e.target.value) || '')}
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 6 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  select
-                                  label="ז'אנר"
-                                  value={book.genre || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'genre', e.target.value)}
-                                >
-                                  {GENRES.map((genre) => (
-                                    <MenuItem key={genre} value={genre}>
-                                      {genre}
-                                    </MenuItem>
-                                  ))}
-                                </TextField>
-                              </Grid>
-                              <Grid size={{ xs: 12, md: 6 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  select
-                                  label="גיל מומלץ"
-                                  value={book.age_range || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'age_range', e.target.value)}
-                                >
-                                  {AGE_LEVELS.map((level) => (
-                                    <MenuItem key={level} value={level}>
-                                      {level}
-                                    </MenuItem>
-                                  ))}
-                                </TextField>
-                              </Grid>
-                              <Grid size={{ xs: 12 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  label="קישור לתמונת השער"
-                                  value={book.cover_image_url || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'cover_image_url', e.target.value)}
-                                  dir="auto"
-                                  inputProps={{ dir: 'auto' }}
-                                />
-                              </Grid>
-                              <Grid size={{ xs: 12 }}>
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  multiline
-                                  rows={3}
-                                  label="תקציר"
-                                  value={book.description || ''}
-                                  onChange={(e) => handleEditBook(book.tempId!, 'description', e.target.value)}
-                                />
-                              </Grid>
-                            </Grid>
-                          </Box>
-                        )}
-
-                        {/* Expand/Collapse button */}
-                        <Button
-                          size="small"
-                          onClick={() => handleToggleExpanded(book.tempId!)}
-                          sx={{ mt: 1 }}
-                          startIcon={<EditIcon />}
-                        >
-                          {book.expanded ? 'הסתר פרטים' : 'ערוך פרטים נוספים'}
-                        </Button>
-                      </Box>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleRefreshBook(book.tempId!)}
-                          color="primary"
-                          disabled={refreshingBooks.has(book.tempId!)}
-                          title="עדכן נתונים מחיפוש מקוון"
-                        >
-                          {refreshingBooks.has(book.tempId!) ? (
-                            <CircularProgress size={20} />
-                          ) : (
-                            <RefreshIcon />
-                          )}
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleRemoveBook(book.tempId!)}
-                          color="error"
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </Box>
-                    </Box>
-                  </Paper>
-                ))}
-              </Stack>
-
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={handleBulkAdd}
-                  disabled={adding || detectedBooks.filter(b => b.selected).length === 0}
-                  startIcon={adding ? <CircularProgress size={20} /> : <CheckIcon />}
-                  sx={{ py: 1.5 }}
-                >
-                  {adding
-                    ? 'מוסיף...'
-                    : `הוסף ${detectedBooks.filter(b => b.selected).length} ספרים`}
-                </Button>
-                <Button variant="outlined" onClick={handleRemoveImage} sx={{ py: 1.5 }}>
-                  ביטול
-                </Button>
-              </Box>
-
-              <Box sx={{ mt: 3 }}>
-                <Button
-                  variant="text"
-                  startIcon={<AddIcon />}
-                  onClick={handleAddManualDetectedBook}
-                >
-                  הוסף ספר ידני לרשימה
-                </Button>
-              </Box>
-
-              {bulkErrors.length > 0 && (
-                <Alert severity="warning" sx={{ mt: 3 }}>
-                  <AlertTitle>חלק מהספרים לא נוספו</AlertTitle>
-                  <Box component="ul" sx={{ pl: 3, mb: 0 }}>
-                    {bulkErrors.map((err, index) => (
-                      <Box component="li" key={`${err.title}-${index}`} sx={{ mb: 0.5 }}>
-                        <Typography variant="body2">
-                          <strong>{err.title || `ספר ${index + 1}`}:</strong> {err.message}
-                        </Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                </Alert>
-              )}
-            </Paper>
-          )}
+          <DetectedBooksList
+            books={visibleBooks}
+            onToggleBook={handleToggleBook}
+            onEditBook={handleEditBook}
+            onToggleExpanded={handleToggleExpanded}
+            onRemoveBook={handleRemoveBook}
+            onRefreshBook={handleRefreshBook}
+            refreshingBooks={refreshingBooks}
+            onSelectAll={handleSelectAll}
+            onDeselectAll={handleDeselectAll}
+            onBulkAdd={handleBulkAdd}
+            adding={adding}
+            onCancel={handleClearAll}
+            onAddManual={handleAddManualDetectedBook}
+            bulkErrors={bulkErrors}
+          />
         </>
       )}
 
@@ -1574,94 +1238,6 @@ export default function AddBook() {
         </>
       )}
 
-      {/* Zoom Dialog */}
-      <Dialog
-        open={zoomDialogOpen}
-        onClose={() => setZoomDialogOpen(false)}
-        maxWidth={false}
-        PaperProps={{
-          sx: {
-            maxWidth: '95vw',
-            maxHeight: '95vh',
-            m: 0,
-          }
-        }}
-      >
-        <DialogContent sx={{ 
-          p: 0, 
-          position: 'relative', 
-          overflow: 'auto',
-          cursor: 'move',
-          '&::-webkit-scrollbar': {
-            width: '12px',
-            height: '12px',
-          },
-          '&::-webkit-scrollbar-track': {
-            background: '#f1f1f1',
-          },
-          '&::-webkit-scrollbar-thumb': {
-            background: '#888',
-            borderRadius: '6px',
-          },
-          '&::-webkit-scrollbar-thumb:hover': {
-            background: '#555',
-          },
-        }}>
-          <IconButton
-            sx={{
-              position: 'sticky',
-              top: 8,
-              right: 8,
-              float: 'right',
-              bgcolor: 'background.paper',
-              zIndex: 1,
-              boxShadow: 2,
-            }}
-            onClick={() => setZoomDialogOpen(false)}
-          >
-            <CloseIcon />
-          </IconButton>
-          <img
-            src={imagePreview}
-            alt="Zoomed"
-            draggable={false}
-            style={{
-              width: '200%',
-              height: 'auto',
-              display: 'block',
-              cursor: 'grab',
-            }}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              const img = e.currentTarget;
-              const container = img.parentElement;
-              if (!container) return;
-              
-              img.style.cursor = 'grabbing';
-              const startX = e.clientX;
-              const startY = e.clientY;
-              const scrollLeft = container.scrollLeft;
-              const scrollTop = container.scrollTop;
-              
-              const handleMouseMove = (moveEvent: MouseEvent) => {
-                const dx = startX - moveEvent.clientX;
-                const dy = startY - moveEvent.clientY;
-                container.scrollLeft = scrollLeft + dx;
-                container.scrollTop = scrollTop + dy;
-              };
-              
-              const handleMouseUp = () => {
-                img.style.cursor = 'grab';
-                window.removeEventListener('mousemove', handleMouseMove);
-                window.removeEventListener('mouseup', handleMouseUp);
-              };
-              
-              window.addEventListener('mousemove', handleMouseMove);
-              window.addEventListener('mouseup', handleMouseUp);
-            }}
-          />
-        </DialogContent>
-      </Dialog>
     </Container>
   );
 }

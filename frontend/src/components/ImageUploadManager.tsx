@@ -1,19 +1,38 @@
 import React, { useState, useRef } from 'react';
-import { Upload, X, AlertCircle, CheckCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Progress } from '@/components/ui/progress';
+import {
+  Box,
+  Typography,
+  LinearProgress,
+  Alert,
+  AlertTitle,
+  Paper,
+  IconButton,
+  Stack,
+  Button,
+} from '@mui/material';
+import {
+  CloudUpload as UploadIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
+  Close as CloseIcon,
+  PhotoCamera as CameraIcon,
+  PhotoLibrary as GalleryIcon,
+} from '@mui/icons-material';
+import { apiCall } from '../utils/apiCall';
 
 interface UploadFile {
-  file: File;
+  id?: string; // Job ID
+  file?: File;
   preview?: string;
-  size: number;
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  size?: number;
+  status: 'pending' | 'uploading' | 'success' | 'error' | 'processing';
   progress: number;
   error?: string;
+  fileName?: string;
 }
 
 interface ImageUploadManagerProps {
+  initialJobs?: any[]; // Existing jobs from DB
   onUploadStart?: (jobId: string) => void;
   onUploadProgress?: (jobId: string, progress: number) => void;
   onUploadComplete?: (jobId: string, results: any) => void;
@@ -21,9 +40,14 @@ interface ImageUploadManagerProps {
   maxFileSize?: number; // in bytes, default 10MB
   acceptedFormats?: string[];
   disabled?: boolean;
+  selectedJobId?: string | null;
+  onJobSelect?: (jobId: string) => void;
+  onJobDelete?: (jobId: string) => void;
+  loading?: boolean;
 }
 
 const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
+  initialJobs = [],
   onUploadStart,
   onUploadProgress,
   onUploadComplete,
@@ -31,11 +55,45 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
   maxFileSize = 10 * 1024 * 1024, // 10MB default
   acceptedFormats = ['image/jpeg', 'image/png', 'image/webp'],
   disabled = false,
+  selectedJobId,
+  onJobSelect,
+  onJobDelete,
+  loading = false,
 }) => {
   const [files, setFiles] = useState<UploadFile[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize with existing jobs
+  React.useEffect(() => {
+    if (initialJobs.length > 0) {
+      const existingFiles: UploadFile[] = initialJobs.map(job => ({
+        id: job.id,
+        preview: job.image_base64_thumbnail 
+          ? `data:image/jpeg;base64,${job.image_base64_thumbnail}` 
+          : (job.image_storage_url || job.image?.url || job.image?.thumbnail ? `data:image/jpeg;base64,${job.image.thumbnail}` : undefined),
+        size: job.image_size_bytes || job.image?.size_bytes || 0,
+        status: job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'processing',
+        progress: job.progress || 0,
+        error: job.error,
+        fileName: job.image_original_filename || job.image?.filename || 'Existing Image'
+      }));
+      
+      // Only add if not already present (simple check by ID)
+      setFiles(prev => {
+        const newFiles = existingFiles.filter(ef => !prev.some(p => p.id === ef.id));
+        return [...prev, ...newFiles];
+      });
+
+      // Poll processing jobs
+      initialJobs.forEach(job => {
+        if (job.status !== 'completed' && job.status !== 'failed') {
+          pollJobStatus(job.id);
+        }
+      });
+    }
+  }, [initialJobs]);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 B';
@@ -98,6 +156,8 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
 
   const uploadFiles = async (filesToUpload: UploadFile[]) => {
     for (const fileItem of filesToUpload) {
+      if (!fileItem.file) continue;
+
       try {
         // Update status to uploading
         setFiles((prev) =>
@@ -111,32 +171,24 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
         formData.append('image', fileItem.file);
 
         // Start upload
-        const response = await fetch('/api/books/detect', {
+        const result = await apiCall<{ jobId: string }>('/api/books/detect-from-image', {
           method: 'POST',
           body: formData,
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Upload failed');
-        }
-
-        const result = await response.json();
         const jobId = result.jobId;
 
-        // Mark as success
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.file === fileItem.file
-              ? { ...f, status: 'success', progress: 100 }
-              : f
-          )
-        );
-
-        onUploadComplete?.(jobId, result);
+        // Mark as success (initially, waiting for poll)
+        // Actually, we should keep it as uploading until poll completes?
+        // Or maybe 'processing'?
+        // The original code marked as success then polled.
+        // But success implies done.
+        // Let's keep it as uploading but with progress updates.
+        
+        onUploadStart?.(jobId);
 
         // Poll for job status
-        pollJobStatus(jobId);
+        pollJobStatus(jobId, fileItem.file);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         setFiles((prev) =>
@@ -151,21 +203,40 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
     }
   };
 
-  const pollJobStatus = async (jobId: string) => {
+  const pollJobStatus = async (jobId: string, file?: File) => {
     const maxAttempts = 120; // 2 minutes with 1s interval
     let attempts = 0;
 
     const poll = async () => {
       try {
-        const response = await fetch(`/api/detection-jobs/${jobId}`);
-        if (!response.ok) throw new Error('Poll failed');
-
-        const job = await response.json();
+        const job = await apiCall<any>(`/api/books/detect-job/${jobId}`);
         onUploadProgress?.(jobId, job.progress || 0);
+        
+        // Update progress in UI
+        setFiles((prev) =>
+          prev.map((f) =>
+            (f.id === jobId || (file && f.file === file)) ? { 
+              ...f, 
+              id: jobId, 
+              // Cap progress at 99% if not completed to avoid confusion
+              progress: (job.status !== 'completed' && (job.progress || 0) >= 100) ? 99 : (job.progress || 0) 
+            } : f
+          )
+        );
 
         if (job.status === 'completed') {
+          setFiles((prev) =>
+            prev.map((f) =>
+              (f.id === jobId || (file && f.file === file)) ? { ...f, id: jobId, status: 'success', progress: 100 } : f
+            )
+          );
           onUploadComplete?.(jobId, job);
         } else if (job.status === 'failed') {
+          setFiles((prev) =>
+            prev.map((f) =>
+              (f.id === jobId || (file && f.file === file)) ? { ...f, id: jobId, status: 'error', error: job.error || 'Detection failed' } : f
+            )
+          );
           onUploadError?.(jobId, job.error || 'Detection failed');
         } else if (attempts < maxAttempts) {
           attempts++;
@@ -183,24 +254,11 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
     poll();
   };
 
-  const removeFile = (file: File) => {
-    setFiles((prev) => prev.filter((f) => f.file !== file));
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
+  const removeFile = (fileItem: UploadFile) => {
+    setFiles((prev) => prev.filter((f) => f !== fileItem));
+    if (fileItem.id && onJobDelete) {
+      onJobDelete(fileItem.id);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,19 +268,9 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Drop Zone */}
-      <div
-        className={`
-          border-2 border-dashed rounded-lg p-8 transition-all
-          ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-        `}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => !disabled && fileInputRef.current?.click()}
-      >
+    <Box sx={{ width: '100%' }}>
+      {/* Upload Zone */}
+      <Box sx={{ textAlign: 'center', mb: 2 }}>
         <input
           ref={fileInputRef}
           type="file"
@@ -230,115 +278,149 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
           accept={acceptedFormats.join(',')}
           onChange={handleInputChange}
           disabled={disabled}
-          className="hidden"
+          style={{ display: 'none' }}
+        />
+        
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleInputChange}
+          disabled={disabled}
+          style={{ display: 'none' }}
         />
 
-        <div className="text-center">
-          <Upload className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-          <h3 className="font-semibold text-gray-700 mb-1">
-            Drop images here or click to browse
-          </h3>
-          <p className="text-sm text-gray-500">
-            Supported formats: {acceptedFormats.join(', ')} • Max size: {formatFileSize(maxFileSize)}
-          </p>
-        </div>
-      </div>
+        <Typography variant="body1" color="text.primary" sx={{ mb: 2, fontWeight: 500 }} dir="auto">
+          בחר אפשרות להעלאת תמונות:
+        </Typography>
+
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center">
+          <Button
+            variant="contained"
+            startIcon={<CameraIcon />}
+            onClick={() => !disabled && cameraInputRef.current?.click()}
+            disabled={disabled}
+          >
+            צלם תמונה
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<GalleryIcon />}
+            onClick={() => !disabled && fileInputRef.current?.click()}
+            disabled={disabled}
+          >
+            בחר מהגלריה (מרובה)
+          </Button>
+        </Stack>
+
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+          פורמטים נתמכים: {acceptedFormats.join(', ')} • גודל מקסימלי: {formatFileSize(maxFileSize)}
+        </Typography>
+      </Box>
 
       {/* Global Error Alert */}
       {globalError && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{globalError}</AlertDescription>
+        <Alert severity="error" sx={{ mt: 2 }}>
+          <AlertTitle>שגיאה</AlertTitle>
+          {globalError}
         </Alert>
       )}
 
       {/* Files List */}
-      {files.length > 0 && (
-        <div className="space-y-3">
-          <h4 className="font-semibold text-sm">Uploads ({files.length})</h4>
+      {(files.length > 0 || loading) && (
+        <Stack spacing={2} sx={{ mt: 3 }}>
+          <Typography variant="subtitle2">העלאות ({files.length})</Typography>
+          
+          {loading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <LinearProgress sx={{ width: '100%' }} />
+            </Box>
+          )}
+
           {files.map((fileItem, idx) => (
-            <div
+            <Paper
               key={idx}
-              className="border rounded-lg p-3 bg-white hover:bg-gray-50 transition"
+              variant="outlined"
+              onClick={() => {
+                if (fileItem.status === 'success' && fileItem.id && onJobSelect) {
+                  onJobSelect(fileItem.id);
+                }
+              }}
+              sx={{ 
+                p: 2, 
+                display: 'flex', 
+                gap: 2, 
+                alignItems: 'flex-start',
+                cursor: (fileItem.status === 'success' && onJobSelect) ? 'pointer' : 'default',
+                borderColor: (selectedJobId && fileItem.id === selectedJobId) ? 'primary.main' : 'divider',
+                bgcolor: (selectedJobId && fileItem.id === selectedJobId) ? 'action.selected' : 'background.paper',
+                transition: 'all 0.2s',
+                '&:hover': {
+                   borderColor: (fileItem.status === 'success' && onJobSelect) ? 'primary.main' : undefined,
+                   bgcolor: (fileItem.status === 'success' && onJobSelect && (!selectedJobId || fileItem.id !== selectedJobId)) ? 'action.hover' : undefined
+                }
+              }}
             >
-              <div className="flex items-start gap-3">
-                {/* Thumbnail */}
-                {fileItem.preview && (
-                  <img
-                    src={fileItem.preview}
-                    alt="Preview"
-                    className="w-16 h-16 rounded object-cover flex-shrink-0"
-                  />
-                )}
+              {/* Thumbnail */}
+              {fileItem.preview && (
+                <Box
+                  component="img"
+                  src={fileItem.preview}
+                  alt="Preview"
+                  sx={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 1,
+                    objectFit: 'cover',
+                    flexShrink: 0,
+                  }}
+                />
+              )}
 
-                {/* File Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="font-medium text-sm truncate">
-                      {fileItem.file.name}
-                    </p>
-                    {fileItem.status === 'success' && (
-                      <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-                    )}
-                    {fileItem.status === 'error' && (
-                      <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
-                    )}
-                  </div>
-
-                  <p className="text-xs text-gray-500 mb-2">
-                    {formatFileSize(fileItem.size)}
-                  </p>
-
-                  {/* Progress Bar */}
-                  {fileItem.status === 'uploading' && (
-                    <div className="space-y-1">
-                      <Progress value={fileItem.progress} className="h-2" />
-                      <p className="text-xs text-gray-600">
-                        {fileItem.progress}% uploaded
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Status Message */}
+              {/* File Info */}
+              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  <Typography variant="body2" noWrap fontWeight="medium">
+                    {fileItem.file?.name || fileItem.fileName || 'תמונה'}
+                  </Typography>
                   {fileItem.status === 'success' && (
-                    <p className="text-xs text-green-600">
-                      Successfully uploaded • waiting for detection results
-                    </p>
+                    <CheckCircleIcon color="success" fontSize="small" />
                   )}
-
                   {fileItem.status === 'error' && (
-                    <p className="text-xs text-red-600">{fileItem.error}</p>
+                    <ErrorIcon color="error" fontSize="small" />
                   )}
+                </Box>
 
-                  {fileItem.status === 'pending' && (
-                    <p className="text-xs text-gray-500">Waiting to upload...</p>
-                  )}
-                </div>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                  {formatFileSize(fileItem.size || 0)}
+                </Typography>
 
-                {/* Remove Button */}
-                {(fileItem.status === 'pending' || fileItem.status === 'error') && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeFile(fileItem.file)}
-                    className="flex-shrink-0"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
+                {/* Progress Bar */}
+                {(fileItem.status === 'uploading' || fileItem.status === 'pending' || fileItem.status === 'processing') && (
+                  <Box sx={{ width: '100%', mt: 1 }}>
+                    <LinearProgress variant="determinate" value={fileItem.progress} />
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                      {fileItem.progress >= 99 ? 'מעבד תוצאות סופיות...' : `${Math.round(fileItem.progress)}% הושלם`}
+                    </Typography>
+                  </Box>
                 )}
-              </div>
-            </div>
+                
+                {fileItem.status === 'error' && (
+                  <Typography variant="caption" color="error">
+                    {fileItem.error}
+                  </Typography>
+                )}
+              </Box>
+              
+              <IconButton size="small" onClick={(e) => { e.stopPropagation(); removeFile(fileItem); }}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Paper>
           ))}
-        </div>
+        </Stack>
       )}
-
-      {/* Empty State */}
-      {files.length === 0 && (
-        <div className="text-center py-4 text-gray-500 text-sm">
-          <p>No images selected yet</p>
-        </div>
-      )}
-    </div>
+    </Box>
   );
 };
 

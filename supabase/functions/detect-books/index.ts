@@ -4,10 +4,9 @@
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { generateBookDetectionPrompt, parseJsonResponse } from './visionServiceUtils.ts';
 
 // ============================================================================
-// Gemini Vision Service (shared logic with backend)
+// Gemini Vision Service (shared with backend)
 // ============================================================================
 class GeminiVisionService {
   private apiKey: string;
@@ -21,8 +20,24 @@ class GeminiVisionService {
   async detectBooksFromImage(imageBase64: string): Promise<any[]> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}:generateContent?key=${this.apiKey}`;
     
-    // Use the shared prompt generation function (without OCR data in edge function)
-    const prompt = generateBookDetectionPrompt();
+    const prompt = `
+Analyze this image of a bookshelf and extract all visible book titles and authors.
+Return the results as a JSON array with the following structure:
+[
+  { "title": "Book Title", "author": "Author Name" },
+  { "title": "Another Book", "author": "Another Author" }
+]
+
+IMPORTANT RULES:
+- Only include books where the title is clearly readable
+- Include author name if visible on the spine or cover
+- If author is not visible, use empty string ""
+- Return valid JSON only, no additional text or markdown formatting
+- Support both Hebrew and English titles
+- If you see a series name and number (e.g., "Harry Potter 1"), include the number in the title
+- Do not include duplicate books
+- If you cannot read any books clearly, return an empty array []
+`;
     
     const payload = {
       contents: [{
@@ -53,8 +68,19 @@ class GeminiVisionService {
     const data = await response.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     
-    // Use the shared JSON parser
-    return parseJsonResponse(text);
+    // Extract JSON from markdown code blocks if present
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/```\s*([\s\S]*?)```/);
+    const jsonText = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    
+    const booksData = JSON.parse(jsonText);
+    
+    // Validate and clean the data
+    return booksData
+      .filter((book: any) => book.title && typeof book.title === 'string')
+      .map((book: any) => ({
+        title: book.title.trim(),
+        author: book.author ? book.author.trim() : ''
+      }));
   }
 }
 

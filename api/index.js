@@ -21,6 +21,24 @@ import { errorHandler } from '../backend_shared_src/middleware/errorHandler.midd
 
 const app = express();
 
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`\n[${new Date().toISOString()}] INCOMING REQUEST: ${req.method} ${req.url}`);
+  console.log(`[Request] Content-Length: ${req.headers['content-length'] || 'unknown'}`);
+  console.log(`[Request] Content-Type: ${req.headers['content-type'] || 'unknown'}`);
+  
+  // Log when response finishes
+  res.on('finish', () => {
+    console.log(`[${new Date().toISOString()}] RESPONSE FINISHED: ${req.method} ${req.url} -> ${res.statusCode}`);
+  });
+  
+  res.on('close', () => {
+    console.log(`[${new Date().toISOString()}] RESPONSE CLOSED PREMATURELY: ${req.method} ${req.url}`);
+  });
+
+  next();
+});
+
 // Environment detection
 const environment = process.env.ENVIRONMENT || process.env.NODE_ENV || 'development';
 const dbUrl = process.env.SUPABASE_URL || process.env.POSTGRES_URL || '';
