@@ -73,7 +73,7 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
         ? `data:image/jpeg;base64,${job.image_base64_thumbnail}` 
         : (job.image?.thumbnail 
             ? `data:image/jpeg;base64,${job.image.thumbnail}` 
-            : (job.image_storage_url || job.image?.url)),
+            : (job.image_storage_url || job.image?.url || (job.image_data ? `data:${job.image_mime_type || 'image/jpeg'};base64,${job.image_data}` : undefined))),
       size: job.image_size_bytes || job.image?.size_bytes || 0,
       status: job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'processing',
       progress: job.progress || 0,

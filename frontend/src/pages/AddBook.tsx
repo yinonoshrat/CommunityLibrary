@@ -872,7 +872,7 @@ export default function AddBook() {
 
           <JobImagePreview 
             visible={!!selectedJobId}
-            imageUrl={selectedJob?.image_storage_url || selectedJob?.image?.url}
+            imageUrl={selectedJob?.image_storage_url || selectedJob?.image?.url || (selectedJob?.image_data ? `data:${selectedJob.image_mime_type || 'image/jpeg'};base64,${selectedJob.image_data}` : undefined)}
             altText={selectedJob?.image_original_filename || 'Detection Image'}
           />
 

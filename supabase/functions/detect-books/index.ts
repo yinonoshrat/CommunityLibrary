@@ -234,9 +234,9 @@ Deno.serve(async (req: Request) => {
       // Step 1: OCR (if credentials available)
       let ocrData = null;
       if (googleCredentials) {
+        const ocrStartTime = Date.now();
         try {
           console.log(`[${jobId}] Google Cloud Credentials found, running Hybrid Vision (OCR + AI)...`);
-          const ocrStartTime = Date.now();
           
           await supabase
             .from('detection_jobs')
@@ -253,6 +253,7 @@ Deno.serve(async (req: Request) => {
             ocrData = null;
           }
         } catch (e) {
+          timings.ocr = Date.now() - ocrStartTime;
           console.error(`[${jobId}] OCR failed, falling back to AI-only:`, e);
         }
       } else {
@@ -423,7 +424,7 @@ Deno.serve(async (req: Request) => {
           status: 'completed',
           progress: 100,
           result: { books: sortedBooks, count: sortedBooks.length },
-          image_data: null, // Clear image data after processing
+          // image_data: null, // Keep image data for display
           updated_at: new Date().toISOString()
         })
         .eq('id', jobId);
