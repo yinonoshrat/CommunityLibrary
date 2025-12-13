@@ -33,6 +33,7 @@ import { searchBooks, type BookSearchResult } from '../utils/bookSearch';
 import { useCreateBook } from '../hooks/useBookMutations';
 import ImageUploadManager from '../components/ImageUploadManager';
 import { DetectedBooksList, type DetectedBook } from '../components/DetectedBooksList';
+import { JobImagePreview } from '../components/JobImagePreview';
 
 interface BookFormData {
   title: string;
@@ -794,6 +795,8 @@ export default function AddBook() {
     ? detectedBooks.filter(b => b.jobId === selectedJobId)
     : detectedBooks.filter(b => b.source === 'manual'); // Show manual books if no job selected
 
+  const selectedJob = selectedJobId ? initialJobs.find(job => job.id === selectedJobId) : null;
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box mb={4}>
@@ -866,6 +869,12 @@ export default function AddBook() {
               loading={loadingJobs}
             />
           </Paper>
+
+          <JobImagePreview 
+            visible={!!selectedJobId}
+            imageUrl={selectedJob?.image_storage_url || selectedJob?.image?.url}
+            altText={selectedJob?.image_original_filename || 'Detection Image'}
+          />
 
           <DetectedBooksList
             books={visibleBooks}

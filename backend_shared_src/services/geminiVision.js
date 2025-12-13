@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import AIVisionService from './aiVisionService.js';
+import { generateBookDetectionPrompt } from './visionServiceUtils.js';
 
 /**
  * Gemini Vision Service
@@ -51,24 +52,7 @@ class GeminiVisionService extends AIVisionService {
       console.log('Detected mime type:', mimeType);
 
       // Prepare the prompt for Gemini
-      const prompt = `
-Analyze this image of a bookshelf and extract all visible book titles and authors.
-Return the results as a JSON array with the following structure:
-[
-  { "title": "Book Title", "author": "Author Name" },
-  { "title": "Another Book", "author": "Another Author" }
-]
-
-IMPORTANT RULES:
-- Only include books where the title is clearly readable
-- Include author name if visible on the spine or cover
-- If author is not visible, use empty string ""
-- Return valid JSON only, no additional text or markdown formatting
-- Support both Hebrew and English titles
-- If you see a series name and number (e.g., "Harry Potter 1"), include the number in the title
-- Do not include duplicate books
-- If you cannot read any books clearly, return an empty array []
-`;
+      const prompt = generateBookDetectionPrompt();
 
       // Prepare image data for Gemini
       const imagePart = {
@@ -104,7 +88,11 @@ IMPORTANT RULES:
         .filter(book => book.title && typeof book.title === 'string')
         .map(book => ({
           title: book.title.trim(),
-          author: book.author ? book.author.trim() : ''
+          author: book.author ? book.author.trim() : '',
+          series: book.series || null,
+          series_number: book.series_number || null,
+          genre: book.genre || null,
+          age_range: book.age_range || null
         }));
 
       console.log(`Successfully detected ${books.length} books from image`);

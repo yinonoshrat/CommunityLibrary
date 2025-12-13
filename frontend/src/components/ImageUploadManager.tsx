@@ -65,34 +65,54 @@ const ImageUploadManager: React.FC<ImageUploadManagerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize with existing jobs
+  // Initialize with existing jobs and sync state
   React.useEffect(() => {
-    if (initialJobs.length > 0) {
-      const existingFiles: UploadFile[] = initialJobs.map(job => ({
-        id: job.id,
-        preview: job.image_base64_thumbnail 
-          ? `data:image/jpeg;base64,${job.image_base64_thumbnail}` 
-          : (job.image_storage_url || job.image?.url || job.image?.thumbnail ? `data:image/jpeg;base64,${job.image.thumbnail}` : undefined),
-        size: job.image_size_bytes || job.image?.size_bytes || 0,
-        status: job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'processing',
-        progress: job.progress || 0,
-        error: job.error,
-        fileName: job.image_original_filename || job.image?.filename || 'Existing Image'
-      }));
+    const existingFiles: UploadFile[] = initialJobs.map(job => ({
+      id: job.id,
+      preview: job.image_base64_thumbnail 
+        ? `data:image/jpeg;base64,${job.image_base64_thumbnail}` 
+        : (job.image?.thumbnail 
+            ? `data:image/jpeg;base64,${job.image.thumbnail}` 
+            : (job.image_storage_url || job.image?.url)),
+      size: job.image_size_bytes || job.image?.size_bytes || 0,
+      status: job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'processing',
+      progress: job.progress || 0,
+      error: job.error,
+      fileName: job.image_original_filename || job.image?.filename || 'Existing Image'
+    }));
+    
+    setFiles(prev => {
+      // 1. Get IDs of jobs currently in the server list
+      const serverJobIds = new Set(initialJobs.map(j => j.id));
       
-      // Only add if not already present (simple check by ID)
-      setFiles(prev => {
-        const newFiles = existingFiles.filter(ef => !prev.some(p => p.id === ef.id));
-        return [...prev, ...newFiles];
+      // 2. Keep files that are:
+      //    a) Local uploads (no ID yet)
+      //    b) Server jobs that still exist in initialJobs
+      const keptFiles = prev.filter(f => !f.id || serverJobIds.has(f.id));
+      
+      // 3. Add new files from server that aren't in keptFiles
+      const newFiles = existingFiles.filter(ef => !keptFiles.some(kf => kf.id === ef.id));
+      
+      // 4. Update existing files with new data from server (e.g. status changes)
+      const updatedFiles = keptFiles.map(kf => {
+        if (!kf.id) return kf;
+        const serverFile = existingFiles.find(ef => ef.id === kf.id);
+        if (serverFile) {
+          // Merge server data
+          return { ...kf, ...serverFile };
+        }
+        return kf;
       });
 
-      // Poll processing jobs
-      initialJobs.forEach(job => {
-        if (job.status !== 'completed' && job.status !== 'failed') {
-          pollJobStatus(job.id);
-        }
-      });
-    }
+      return [...updatedFiles, ...newFiles];
+    });
+
+    // Poll processing jobs
+    initialJobs.forEach(job => {
+      if (job.status !== 'completed' && job.status !== 'failed') {
+        pollJobStatus(job.id);
+      }
+    });
   }, [initialJobs]);
 
   const formatFileSize = (bytes: number): string => {
