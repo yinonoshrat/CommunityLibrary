@@ -377,11 +377,23 @@ Deno.serve(async (req: Request) => {
               }
             }
 
-            // Mark books as already owned
+            // Mark books as already owned and boost confidence
             for (const book of uniqueBooks) {
               const series = (book.series || '').toLowerCase().trim();
               const key = `${book.title.toLowerCase().trim()}|${(book.author || '').toLowerCase().trim()}|${series}`;
-              book.alreadyOwned = ownedKeys.has(key);
+              
+              if (ownedKeys.has(key)) {
+                book.alreadyOwned = true;
+                // If we know the user owns it, it's definitely a real book!
+                // Boost confidence to high if it was low/medium
+                if (book.confidence !== 'high') {
+                  book.confidence = 'high';
+                  book.confidenceScore = Math.max(book.confidenceScore || 0, 90);
+                  console.log(`[${jobId}] Boosted confidence for owned book: "${book.title}"`);
+                }
+              } else {
+                book.alreadyOwned = false;
+              }
             }
 
             console.log(`[${jobId}] Found ${ownedKeys.size} books in user's catalog, marked ${uniqueBooks.filter(b => b.alreadyOwned).length} as already owned`);

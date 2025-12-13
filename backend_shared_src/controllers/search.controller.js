@@ -1,5 +1,5 @@
 import { supabase } from '../db/adapter.js';
-import { searchBooks } from '../services/bookSearch.js';
+import { searchBooks, searchBookDetails } from '../services/bookSearch.js';
 import { asyncHandler } from '../middleware/errorHandler.middleware.js';
 
 /**
@@ -7,16 +7,21 @@ import { asyncHandler } from '../middleware/errorHandler.middleware.js';
  * @route GET /api/search-books
  */
 export const searchBooksGlobal = asyncHandler(async (req, res) => {
-  const { q, query, provider = 'auto', maxResults = 10, userId } = req.query;
+  const { q, query, title, author, provider = 'auto', maxResults = 10, userId } = req.query;
   
-  // Support both 'q' and 'query' parameters
-  const searchQuery = q || query;
+  // Support both 'q' and 'query' parameters, or construct from title/author
+  let searchQuery = q || query;
   
-  if (!searchQuery) {
+  if (!searchQuery && !title) {
     return res.status(400).json({ 
       error: 'Missing query parameter',
-      message: 'Please provide a search query using ?q=... or ?query=...'
+      message: 'Please provide a search query using ?q=... or ?title=...'
     });
+  }
+
+  // If title is provided, use it for structured search
+  if (title && !searchQuery) {
+    searchQuery = author ? `${title} ${author}` : title;
   }
   
   console.log(`Book search request: "${searchQuery}" (provider: ${provider})`);
@@ -67,10 +72,21 @@ export const searchBooksGlobal = asyncHandler(async (req, res) => {
   }));
   
   // Search external sources
-  const externalResults = await searchBooks(searchQuery, { 
-    provider, 
-    maxResults: parseInt(maxResults) 
-  });
+  let externalResults = [];
+  
+  // If we have explicit title (and optional author), use the smarter searchBookDetails
+  if (title) {
+    const detailResult = await searchBookDetails(title, author || '');
+    if (detailResult) {
+      externalResults = [detailResult];
+    }
+  } else {
+    // Otherwise use standard search
+    externalResults = await searchBooks(searchQuery, { 
+      provider, 
+      maxResults: parseInt(maxResults) 
+    });
+  }
   
   // Combine results: catalog first, then external
   const allResults = [...catalogBooks, ...externalResults];

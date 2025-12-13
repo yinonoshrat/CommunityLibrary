@@ -570,8 +570,10 @@ export default function AddBook() {
     setRefreshingBooks(prev => new Set(prev).add(tempId));
 
     try {
-      // Search for updated book details
-      const results = await searchBooks(`${book.title} ${book.author || ''}`, {
+      // Search for updated book details using structured search (backend handles retry logic)
+      const results = await searchBooks('', {
+        title: book.title,
+        author: book.author || '',
         provider: 'auto',
         maxResults: 1,
         userId: user?.id,

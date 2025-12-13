@@ -32,12 +32,16 @@ export interface SearchOptions {
   maxResults?: number;
   /** User ID to check for owned books */
   userId?: string;
+  /** Explicit title for structured search */
+  title?: string;
+  /** Explicit author for structured search */
+  author?: string;
 }
 
 /**
  * Main search function - calls backend API
  * 
- * @param query - The search query
+ * @param query - The search query (optional if title is provided in options)
  * @param options - Search options
  * @returns Array of book search results
  */
@@ -48,23 +52,25 @@ export async function searchBooks(
   const {
     provider = 'auto',
     maxResults = 10,
-    userId
+    userId,
+    title,
+    author
   } = options;
 
-  if (!query.trim()) {
+  if (!query.trim() && !title) {
     return [];
   }
 
   try {
     const params = new URLSearchParams({
-      q: query,
       provider,
       maxResults: maxResults.toString()
     });
 
-    if (userId) {
-      params.append('userId', userId);
-    }
+    if (query) params.append('q', query);
+    if (title) params.append('title', title);
+    if (author) params.append('author', author);
+    if (userId) params.append('userId', userId);
 
     const data = await apiCall<{ success: boolean; results: BookSearchResult[] }>(
       `/api/search-books?${params.toString()}`

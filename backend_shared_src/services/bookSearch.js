@@ -77,11 +77,16 @@ export async function searchBookDetails(title, author = '') {
   try {
     console.log(`Searching for book details: "${title}" by "${author}"`);
     
-    // Build search query
-    const query = author ? `${title} ${author}` : title;
+    // 1. Try searching with Title + Author
+    let query = author ? `${title} ${author}` : title;
+    let results = await searchBooks(query, { maxResults: 5 });
     
-    // Search using first enabled provider
-    const results = await searchBooks(query, { maxResults: 5 });
+    // 2. If no results and we have an author, try searching by Title only
+    if ((!results || results.length === 0) && author) {
+      console.log(`No results for "${title} ${author}", retrying with title only: "${title}"`);
+      query = title;
+      results = await searchBooks(query, { maxResults: 5 });
+    }
     
     if (!results || results.length === 0) {
       return null;
