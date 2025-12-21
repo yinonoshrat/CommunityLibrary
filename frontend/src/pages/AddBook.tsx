@@ -1047,6 +1047,7 @@ export default function AddBook() {
               <TextField
                 fullWidth
                 required
+                name="title"
                 label="שם הספר"
                 value={formData.title}
                 onChange={handleChange('title')}
@@ -1063,6 +1064,7 @@ export default function AddBook() {
               <TextField
                 fullWidth
                 required
+                name="author"
                 label="מחבר"
                 value={formData.author}
                 onChange={handleChange('author')}
@@ -1078,6 +1080,7 @@ export default function AddBook() {
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
+                name="series"
                 label="סדרה"
                 value={formData.series}
                 onChange={handleChange('series')}
@@ -1092,6 +1095,7 @@ export default function AddBook() {
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
+                name="series_number"
                 label="מספר כרך בסדרה"
                 type="number"
                 value={formData.series_number}
@@ -1106,6 +1110,7 @@ export default function AddBook() {
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
+                name="isbn"
                 label="ISBN"
                 value={formData.isbn}
                 onChange={handleChange('isbn')}                disabled={loading || success}
@@ -1118,6 +1123,7 @@ export default function AddBook() {
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
+                name="publish_year"
                 label="שנת פרסום"
                 type="number"
                 value={formData.publish_year}
@@ -1131,6 +1137,7 @@ export default function AddBook() {
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
+                name="publisher"
                 label="הוצאה לאור"
                 value={formData.publisher}
                 onChange={handleChange('publisher')}
@@ -1144,6 +1151,7 @@ export default function AddBook() {
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
+                name="pages"
                 label="מספר עמודים"
                 type="number"
                 value={formData.pages}
@@ -1159,6 +1167,7 @@ export default function AddBook() {
                 fullWidth
                 required
                 select
+                name="genre"
                 label="ז'אנר"
                 value={formData.genre}
                 onChange={handleChange('genre')}
@@ -1179,6 +1188,7 @@ export default function AddBook() {
               <TextField
                 fullWidth
                 select
+                name="age_range"
                 label="גיל מומלץ"
                 value={formData.age_range}
                 onChange={handleChange('age_range')}
@@ -1196,6 +1206,7 @@ export default function AddBook() {
             <Grid size={{ xs: 12 }}>
               <TextField
                 fullWidth
+                name="cover_image_url"
                 label="קישור לתמונת השער"
                 value={formData.cover_image_url}
                 onChange={handleChange('cover_image_url')}
@@ -1212,6 +1223,7 @@ export default function AddBook() {
                 fullWidth
                 multiline
                 rows={4}
+                name="description"
                 label="תקציר"
                 value={formData.description}
                 onChange={handleChange('description')}

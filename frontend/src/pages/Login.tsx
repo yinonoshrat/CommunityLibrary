@@ -221,6 +221,7 @@ export default function Login() {
               <TextField
                 fullWidth
                 label="אימייל"
+                placeholder="אימייל"
                 name="email"
                 type="email"
                 value={email}
@@ -308,6 +309,7 @@ export default function Login() {
               <TextField
                 fullWidth
                 label="סיסמה"
+                placeholder="סיסמה"
                 name="password"
                 type="password"
                 value={password}

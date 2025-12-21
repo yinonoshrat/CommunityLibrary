@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
   Container,
   Typography,
@@ -6,12 +6,16 @@ import {
   CircularProgress,
   Alert,
   Grid,
+  Tabs,
+  Tab,
 } from '@mui/material'
 import { useAuth } from '../contexts/AuthContext'
 import { useUser } from '../hooks/useUser'
 import { useLoansByOwner, useLoansByBorrower } from '../hooks/useLoans'
 import CatalogBookCard from '../components/CatalogBookCard'
-import type { CatalogBook } from '../types'
+import ReturnBookDialog from '../components/ReturnBookDialog'
+import type { CatalogBook, BookLoanSummary } from '../types'
+import { useQueryClient } from '@tanstack/react-query'
 
 interface LoanRecord {
   id: string
@@ -72,19 +76,19 @@ const toCatalogBook = (loan: LoanRecord, viewerFamilyId: string | null): Catalog
     stats: {
       totalCopies: 1,
       availableCopies: 1,
-      onLoanCopies: 0,
+      onLoanCopies: loan.status === 'active' ? 1 : 0,
       totalLikes: 0,
       userLiked: false,
     },
     owners: [
       {
         familyBookId: loan.family_book_id,
-        status: 'returned',
+        status: loan.status === 'active' ? 'lent' : 'returned',
         condition: null,
         notes: null,
         familyId: loan.owner_family_id,
         family: loan.owner_family || null,
-        loan: null,
+        loan: loan.status === 'active' ? (loan as any) : null,
         isViewerOwner: viewerIsOwner,
       },
     ],
@@ -95,12 +99,12 @@ const toCatalogBook = (loan: LoanRecord, viewerFamilyId: string | null): Catalog
         ? [
             {
               familyBookId: loan.family_book_id,
-              status: 'returned',
-              loan: null,
+              status: loan.status === 'active' ? 'lent' : 'returned',
+              loan: loan.status === 'active' ? (loan as any) : null,
             },
           ]
         : [],
-      borrowedLoan: undefined,
+      borrowedLoan: viewerIsBorrower && loan.status === 'active' ? (loan as any) : undefined,
     },
   }
 }
@@ -115,26 +119,54 @@ const getHistoryLabel = (loan: LoanRecord, viewerFamilyId: string | null) => {
 
 export default function LoansDashboard() {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const [tab, setTab] = useState(0)
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false)
+  const [selectedLoan, setSelectedLoan] = useState<any | null>(null)
 
   // Reactive hooks - automatic caching
   const { data: userData } = useUser(user?.id)
-  const { data: lentLoans, isLoading: lentLoading } = useLoansByOwner(userData?.user?.family_id, 'returned')
-  const { data: borrowedLoans, isLoading: borrowedLoading } = useLoansByBorrower(userData?.user?.family_id, 'returned')
-  
-  const loading = lentLoading || borrowedLoading;
-  const viewerFamilyId = userData?.user?.family_id || null;
+  const familyId = userData?.user?.family_id
 
-  // Combine and sort loans
+  // Active Loans
+  const { data: activeLentLoans, isLoading: activeLentLoading } = useLoansByOwner(familyId, 'active')
+  const { data: activeBorrowedLoans, isLoading: activeBorrowedLoading } = useLoansByBorrower(familyId, 'active')
+
+  // History Loans
+  const { data: historyLentLoans, isLoading: historyLentLoading } = useLoansByOwner(familyId, 'returned')
+  const { data: historyBorrowedLoans, isLoading: historyBorrowedLoading } = useLoansByBorrower(familyId, 'returned')
+  
+  const loading = activeLentLoading || activeBorrowedLoading || historyLentLoading || historyBorrowedLoading;
+  const viewerFamilyId = familyId || null;
+
+  // Combine and sort history loans
   const historyLoans = useMemo(() => {
     return [
-      ...(lentLoans?.loans || []),
-      ...(borrowedLoans?.loans || []),
+      ...(historyLentLoans?.loans || []),
+      ...(historyBorrowedLoans?.loans || []),
     ].sort((a: any, b: any) => {
       const aDate = new Date(a.actual_return_date || a.request_date || 0).getTime()
       const bDate = new Date(b.actual_return_date || b.request_date || 0).getTime()
       return bDate - aDate
     })
-  }, [lentLoans, borrowedLoans]);
+  }, [historyLentLoans, historyBorrowedLoans]);
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTab(newValue)
+  }
+
+  const handleMarkReturned = ({ loan }: { book: CatalogBook; loan: BookLoanSummary }) => {
+    setSelectedLoan(loan)
+    setReturnDialogOpen(true)
+  }
+
+  const handleReturnSuccess = () => {
+    setReturnDialogOpen(false)
+    setSelectedLoan(null)
+    // Invalidate queries to refresh data
+    queryClient.invalidateQueries({ queryKey: ['loans'] })
+    queryClient.invalidateQueries({ queryKey: ['books'] })
+  }
 
   if (loading) {
     return (
@@ -150,30 +182,108 @@ export default function LoansDashboard() {
     <Container maxWidth="lg" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 } }}>
       <Box mb={4}>
         <Typography variant="h4" component="h1" gutterBottom>
-          היסטוריית השאלות
+          ניהול השאלות
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          כל הספרים ששאלתם או השאלתם בעבר
+          צפו בספרים שהשאלתם, שאלתם והיסטוריית ההשאלות
         </Typography>
       </Box>
 
-      {historyLoans.length === 0 ? (
-        <Alert severity="info">אין רשומות היסטוריות להצגה</Alert>
-      ) : (
-        <Grid container spacing={3}>
-          {historyLoans.map((loan) => {
-            const book = toCatalogBook(loan, viewerFamilyId)
-            const historyLabel = getHistoryLabel(loan, viewerFamilyId)
-            return (
-              <Grid key={loan.id} size={{ xs: 12, md: 6 }}>
-                <CatalogBookCard book={book} />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                  {historyLabel}
-                </Typography>
-              </Grid>
-            )
-          })}
-        </Grid>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={tab} onChange={handleTabChange} aria-label="loans tabs">
+          <Tab label="השאלתי" />
+          <Tab label="שאלתי" />
+          <Tab label="היסטוריה" />
+        </Tabs>
+      </Box>
+
+      {/* Tab 0: Lent (Active) */}
+      {tab === 0 && (
+        <Box>
+          {activeLentLoans?.loans && activeLentLoans.loans.length > 0 ? (
+            <Grid container spacing={3}>
+              {activeLentLoans.loans.map((loan) => {
+                const book = toCatalogBook(loan, viewerFamilyId)
+                return (
+                  <Grid key={loan.id} size={{ xs: 12, md: 6 }}>
+                    <Box data-testid="loan-card">
+                      <CatalogBookCard 
+                        book={book} 
+                        onMarkReturned={handleMarkReturned}
+                      />
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                        הושאל ל{loan.borrower_family?.name || 'משפחה'} ב-{formatDate(loan.request_date)}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                )
+              })}
+            </Grid>
+          ) : (
+            <Alert severity="info">אין ספרים מושאלים כרגע</Alert>
+          )}
+        </Box>
+      )}
+
+      {/* Tab 1: Borrowed (Active) */}
+      {tab === 1 && (
+        <Box>
+          {activeBorrowedLoans?.loans && activeBorrowedLoans.loans.length > 0 ? (
+            <Grid container spacing={3}>
+              {activeBorrowedLoans.loans.map((loan) => {
+                const book = toCatalogBook(loan, viewerFamilyId)
+                return (
+                  <Grid key={loan.id} size={{ xs: 12, md: 6 }}>
+                    <Box data-testid="loan-card">
+                      <CatalogBookCard book={book} />
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                        הושאל מ{loan.owner_family?.name || 'משפחה'} ב-{formatDate(loan.request_date)}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                )
+              })}
+            </Grid>
+          ) : (
+            <Alert severity="info">אין ספרים ששאלתם כרגע</Alert>
+          )}
+        </Box>
+      )}
+
+      {/* Tab 2: History */}
+      {tab === 2 && (
+        <Box>
+          {historyLoans.length > 0 ? (
+            <Grid container spacing={3}>
+              {historyLoans.map((loan) => {
+                const book = toCatalogBook(loan, viewerFamilyId)
+                const historyLabel = getHistoryLabel(loan, viewerFamilyId)
+                return (
+                  <Grid key={loan.id} size={{ xs: 12, md: 6 }}>
+                    <Box data-testid="loan-card">
+                      <CatalogBookCard book={book} />
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                        {historyLabel}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                )
+              })}
+            </Grid>
+          ) : (
+            <Alert severity="info">אין רשומות היסטוריות להצגה</Alert>
+          )}
+        </Box>
+      )}
+
+      {selectedLoan && (
+        <ReturnBookDialog
+          open={returnDialogOpen}
+          onClose={() => setReturnDialogOpen(false)}
+          loan={selectedLoan}
+          familyBookId={selectedLoan.family_book_id}
+          onSuccess={handleReturnSuccess}
+        />
       )}
     </Container>
   );

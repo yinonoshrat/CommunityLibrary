@@ -407,7 +407,7 @@ export default function Register() {
             </Box>
           </Box>
 
-          <Box component="form" onSubmit={handleFormSubmit}>
+          <Box component="form" onSubmit={handleFormSubmit} noValidate>
             {/* Personal Details */}
             <Typography variant="h6" sx={{ mb: 2 }}>
               פרטים אישיים

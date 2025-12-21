@@ -10,5 +10,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: './__tests__/setup/testData.js',
+    env: {
+      NODE_TLS_REJECT_UNAUTHORIZED: '0',
+    },
   },
 })

@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import request from 'supertest'
 import { getSharedTestData } from './setup/testData.js'
+import { resourceManager } from './setup/resourceManager.js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
@@ -22,6 +23,10 @@ describe('Families API Endpoints', () => {
     const sharedData = getSharedTestData()
     testFamilyId = sharedData.familyId
     testUserId = sharedData.userId
+  })
+
+  afterAll(async () => {
+    await resourceManager.cleanup()
   })
 
   describe('GET /api/families', () => {
@@ -110,8 +115,8 @@ describe('Families API Endpoints', () => {
       expect(response.body.family).toHaveProperty('id')
       expect(response.body.family.name).toContain('New Family')
 
-      // Cleanup created family
-      await request(app).delete(`/api/families/${response.body.family.id}`)
+      // Track created family for cleanup
+      resourceManager.track('families', response.body.family.id)
     })
 
     it('should return JSON error for missing required fields', async () => {
@@ -141,8 +146,8 @@ describe('Families API Endpoints', () => {
 
       expect(response.body).toHaveProperty('family')
 
-      // Cleanup created family
-      await request(app).delete(`/api/families/${response.body.family.id}`)
+      // Track created family for cleanup
+      resourceManager.track('families', response.body.family.id)
     })
   })
 
@@ -213,6 +218,7 @@ describe('Families API Endpoints', () => {
         .expect(201)
 
       const familyId = createResponse.body.family.id
+      resourceManager.track('families', familyId)
 
       const response = await request(app)
         .delete(`/api/families/${familyId}`)

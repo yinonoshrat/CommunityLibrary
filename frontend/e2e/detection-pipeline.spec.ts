@@ -12,7 +12,7 @@ test.describe('Detection Pipeline E2E Tests', () => {
   test('should upload image and detect books successfully', async ({ page }) => {
     // Upload image
     const fileInput = page.locator('input[type="file"]').first();
-    await fileInput.setInputFiles('./test-fixtures/bookshelf.jpg');
+    await fileInput.setInputFiles('../../test-images/1000270703.jpg');
 
     // Verify image preview appears
     const preview = page.locator('img[alt="Preview"]');

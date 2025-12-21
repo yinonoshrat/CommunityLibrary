@@ -15,6 +15,7 @@ import systemRouter from '../backend_shared_src/routes/system.routes.js';
 import searchRouter from '../backend_shared_src/routes/search.routes.js';
 import reviewsRouter from '../backend_shared_src/routes/reviews.routes.js';
 import recommendationsRouter from '../backend_shared_src/routes/recommendations.routes.js';
+import enrichmentRouter from '../backend_shared_src/routes/enrichment.routes.js';
 import { setAiVisionService } from '../backend_shared_src/controllers/books.controller.js';
 import { extractUserFromToken } from '../backend_shared_src/middleware/auth.middleware.js';
 import { errorHandler } from '../backend_shared_src/middleware/errorHandler.middleware.js';
@@ -164,6 +165,9 @@ app.use('/api/reviews', reviewsRouter);
 
 // Mount recommendations router (handles /api/recommendations)
 app.use('/api/recommendations', recommendationsRouter);
+
+// Mount enrichment router
+app.use('/api/enrichment', enrichmentRouter);
 
 // Mount system router (handles /api/health)
 app.use('/api', systemRouter);

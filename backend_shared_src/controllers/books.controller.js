@@ -798,7 +798,11 @@ export const toggleBookLike = asyncHandler(async (req, res) => {
 
   try {
     const result = await db.likes.toggle(req.params.bookId, user_id);
-    res.json(result);
+    if (result.liked) {
+      res.status(201).json(result);
+    } else {
+      res.status(200).json(result);
+    }
   } catch (error) {
     console.error('Failed to toggle book like:', error);
     res.status(400).json({ error: 'Failed to toggle book like' });

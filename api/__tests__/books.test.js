@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import request from 'supertest'
-import { getSharedTestData, cleanupTestData } from './setup/testData.js'
+import { getSharedTestData } from './setup/testData.js'
+import { resourceManager } from './setup/resourceManager.js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
@@ -39,8 +40,13 @@ describe('Books API Endpoints', () => {
 
       if (bookResponse.body.book) {
         testBookId = bookResponse.body.book.id
+        resourceManager.track('books', testBookId)
       }
     }
+  })
+
+  afterAll(async () => {
+    await resourceManager.cleanup()
   })
 
   describe('GET /api/books', () => {
@@ -214,8 +220,8 @@ describe('Books API Endpoints', () => {
       expect(response.body.book).toHaveProperty('id')
       expect(response.body.book.title).toContain('New Book')
 
-      // Cleanup created book
-      await request(app).delete(`/api/books/${response.body.book.id}`).set('x-user-id', testUserId)
+      // Track created book for cleanup
+      resourceManager.track('books', response.body.book.id)
     })
 
     it('should return JSON error for missing required fields', async () => {
@@ -246,8 +252,8 @@ describe('Books API Endpoints', () => {
 
       expect(response.body).toHaveProperty('book')
 
-      // Cleanup created book
-      await request(app).delete(`/api/books/${response.body.book.id}`).set('x-user-id', testUserId)
+      // Track created book for cleanup
+      resourceManager.track('books', response.body.book.id)
     })
 
     it('should set default status to available', async () => {
@@ -264,8 +270,8 @@ describe('Books API Endpoints', () => {
 
       expect(response.body.book.status).toBe('available')
 
-      // Cleanup created book
-      await request(app).delete(`/api/books/${response.body.book.id}`).set('x-user-id', testUserId)
+      // Track created book for cleanup
+      resourceManager.track('books', response.body.book.id)
     })
   })
 
@@ -312,6 +318,8 @@ describe('Books API Endpoints', () => {
         .expect(201)
 
       const bookId = createResponse.body.book.id
+      // Track it just in case delete fails
+      resourceManager.track('books', bookId)
 
       const response = await request(app)
         .delete(`/api/books/${bookId}`)

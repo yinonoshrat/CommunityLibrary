@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import request from 'supertest'
 import { getSharedTestData } from './setup/testData.js'
 import { createClient } from '@supabase/supabase-js'
+import { resourceManager } from './setup/resourceManager.js'
 
 const appModule = await import('../index.js')
 const app = appModule.default
@@ -42,12 +43,19 @@ describe('Loans API Endpoints', () => {
     if (existingFamily) {
       borrowerFamilyId = existingFamily.id
     } else {
-      const { data: newFamily } = await supabase
+      const { data: newFamily, error } = await supabase
         .from('families')
         .insert({ name: 'Loans Test Borrower Family', phone: '2222222222' })
         .select()
         .single()
+      
+      if (error) {
+        console.error('Error creating borrower family:', error)
+        throw error
+      }
+      
       borrowerFamilyId = newFamily.id
+      resourceManager.track('families', borrowerFamilyId)
     }
 
     // Find or create a test book
@@ -74,6 +82,7 @@ describe('Loans API Endpoints', () => {
 
       if (bookResponse.body.book) {
         testBookId = bookResponse.body.book.id
+        resourceManager.track('books', testBookId)
       }
     }
 
@@ -92,8 +101,13 @@ describe('Loans API Endpoints', () => {
 
       if (loanResponse.body.loan) {
         testLoanId = loanResponse.body.loan.id
+        resourceManager.track('loans', testLoanId)
       }
     }
+  })
+
+  afterAll(async () => {
+    await resourceManager.cleanup()
   })
 
   describe('GET /api/loans', () => {
@@ -188,7 +202,8 @@ describe('Loans API Endpoints', () => {
 
       expect(response.body).toHaveProperty('loan')
       expect(response.body.loan).toHaveProperty('id')
-      testLoanId = response.body.loan.id
+      
+      resourceManager.track('loans', response.body.loan.id)
     })
 
     it('should return JSON error for missing required fields', async () => {
@@ -221,6 +236,9 @@ describe('Loans API Endpoints', () => {
 
       // Should work without error
       expect(response.body).toBeDefined()
+      if (response.body.loan) {
+        resourceManager.track('loans', response.body.loan.id)
+      }
     })
 
     it('should update book status to on_loan when loan is active', async () => {
@@ -240,6 +258,7 @@ describe('Loans API Endpoints', () => {
         })
 
       const bookId = bookResponse.body.book.id
+      resourceManager.track('books', bookId)
 
       // Create loan
       const loanResponse = await request(app)
@@ -255,6 +274,7 @@ describe('Loans API Endpoints', () => {
         .expect(201)
 
       const loanId = loanResponse.body.loan?.id
+      if (loanId) resourceManager.track('loans', loanId)
 
       // Check book status
       const bookCheck = await request(app)
@@ -262,12 +282,6 @@ describe('Loans API Endpoints', () => {
         .expect(200)
 
       expect(bookCheck.body.book.status).toBe('on_loan')
-
-      // Cleanup: delete loan first, then book
-      if (loanId) {
-        await request(app).delete(`/api/loans/${loanId}`)
-      }
-      await request(app).delete(`/api/books/${bookId}`).set('x-user-id', testUserId)
     })
   })
 
@@ -305,9 +319,11 @@ describe('Loans API Endpoints', () => {
         })
 
       const bookId = bookResponse.body.book.id
+      resourceManager.track('books', bookId)
 
       const loanResponse = await request(app)
         .post('/api/loans')
+        .set('x-user-id', testUserId)
         .send({
           family_book_id: bookId,
           borrower_family_id: borrowerFamilyId,
@@ -317,6 +333,7 @@ describe('Loans API Endpoints', () => {
         })
 
       const loanId = loanResponse.body.loan?.id
+      if (loanId) resourceManager.track('loans', loanId)
 
       // Return the loan
       await request(app)
@@ -331,12 +348,6 @@ describe('Loans API Endpoints', () => {
         .expect(200)
 
       expect(bookCheck.body.book.status).toBe('available')
-
-      // Cleanup: delete loan first, then book
-      if (loanId) {
-        await request(app).delete(`/api/loans/${loanId}`)
-      }
-      await request(app).delete(`/api/books/${bookId}`).set('x-user-id', testUserId)
     })
 
     it('should return JSON error for non-existent loan', async () => {
@@ -352,4 +363,3 @@ describe('Loans API Endpoints', () => {
     })
   })
 })
-

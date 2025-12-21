@@ -11,23 +11,26 @@ describe('Detection Pipeline Integration', () => {
 
   beforeEach(() => {
     // Mock Supabase operations
+    const mockBuilder = {
+      insert: vi.fn().mockResolvedValue({ data: { id: 'job-123' }, error: null }),
+      select: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'job-123' }, error: null }),
+      then: (resolve) => resolve({
+        data: [
+          {
+            id: 'job-123',
+            status: 'completed',
+            result: { books: [{ title: 'Test Book' }] },
+          },
+        ],
+        error: null,
+      })
+    };
+
     mockSupabase = {
-      from: vi.fn((table) => ({
-        insert: vi.fn().mockResolvedValue({ data: { id: 'job-123' }, error: null }),
-        select: vi.fn().mockResolvedValue({
-          data: [
-            {
-              id: 'job-123',
-              status: 'completed',
-              result: { books: [{ title: 'Test Book' }] },
-            },
-          ],
-          error: null,
-        }),
-        update: vi.fn().mockResolvedValue({ data: null, error: null }),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: { id: 'job-123' }, error: null }),
-      })),
+      from: vi.fn(() => mockBuilder),
       storage: {
         from: vi.fn((bucket) => ({
           upload: vi

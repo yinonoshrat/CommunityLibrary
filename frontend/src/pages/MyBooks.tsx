@@ -352,8 +352,14 @@ export default function MyBooks() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4, md: 2.5 }}>
             <FormControl fullWidth>
-              <InputLabel>סטטוס</InputLabel>
-              <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} label="סטטוס">
+              <InputLabel id="status-label">סטטוס</InputLabel>
+              <Select
+                labelId="status-label"
+                id="status-select"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                label="סטטוס"
+              >
                 {STATUS_OPTIONS.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
                     {option.label}
@@ -364,8 +370,14 @@ export default function MyBooks() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4, md: 2 }}>
             <FormControl fullWidth>
-              <InputLabel>ז'אנר</InputLabel>
-              <Select value={genreFilter} onChange={(e) => setGenreFilter(e.target.value)} label="ז'אנר">
+              <InputLabel id="genre-label">ז'אנר</InputLabel>
+              <Select
+                labelId="genre-label"
+                id="genre-select"
+                value={genreFilter}
+                onChange={(e) => setGenreFilter(e.target.value)}
+                label="ז'אנר"
+              >
                 {uniqueGenres.map((genre) => (
                   <MenuItem key={genre} value={genre === 'הכל' ? 'all' : genre}>
                     {genre}
@@ -376,8 +388,14 @@ export default function MyBooks() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4, md: 2.5 }}>
             <FormControl fullWidth>
-              <InputLabel>מיון</InputLabel>
-              <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="מיון">
+              <InputLabel id="sort-label">מיון</InputLabel>
+              <Select
+                labelId="sort-label"
+                id="sort-select"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                label="מיון"
+              >
                 <MenuItem value="title">שם הספר</MenuItem>
                 <MenuItem value="author">מחבר</MenuItem>
                 <MenuItem value="updated">עודכן לאחרונה</MenuItem>

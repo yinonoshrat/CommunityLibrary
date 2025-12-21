@@ -1,30 +1,80 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
+
+// Helper function to generate unique user data
+function generateUserData() {
+  const timestamp = Date.now();
+  return {
+    name: `Test User ${timestamp}`,
+    email: `user${timestamp}@example.com`,
+    password: 'Test1234!',
+    phone: '0501234567',
+    familyName: `Family ${timestamp}`
+  };
+}
+
+// Helper function to register a new user
+async function registerUser(page: Page, userData: any) {
+  await page.goto('/register');
+  
+  await page.fill('input[name="name"]', userData.name);
+  await page.fill('input[name="email"]', userData.email);
+  await page.fill('input[name="password"]', userData.password);
+  // Note: Register page might have confirm password field, checking Register.tsx
+  // It does: label="אימות סיסמה", value={confirmPassword}
+  // But it doesn't have a name attribute in the code I read?
+  // Let's check the code again.
+  // <TextField fullWidth label="אימות סיסמה" type="password" value={confirmPassword} ... />
+  // It has no name attribute! I need to target it by label or order.
+  // It's the 4th TextField. Or I can use getByLabel('אימות סיסמה').
+  await page.getByLabel('אימות סיסמה').fill(userData.password);
+  
+  await page.fill('input[name="phone"]', userData.phone);
+  
+  // Family section - default is "new"
+  await page.fill('input[name="familyName"]', userData.familyName);
+  
+  await page.click('[data-testid="submit-button"]');
+  
+  // Wait for redirect to login
+  await page.waitForURL('/login');
+}
 
 // Helper function for login
-async function login(page: any) {
+async function login(page: Page, email: string) {
   await page.goto('/login');
-  await page.fill('input[name="email"]', 'yinono@gmail.com');
+  
+  // Step 1: Email
+  await page.fill('input[name="email"]', email);
+  await page.click('button[type="submit"]');
+  
+  // Step 2: Password
+  await page.waitForSelector('input[name="password"]');
   await page.fill('input[name="password"]', 'Test1234!');
   await page.click('button[type="submit"]');
+  
   await page.waitForURL('/', { timeout: 10000 });
 }
 
 test.describe('Loans Management', () => {
+  let userData: any;
+
   test.beforeEach(async ({ page }) => {
-    await login(page);
+    userData = generateUserData();
+    await registerUser(page, userData);
+    await login(page, userData.email);
   });
 
   test('should navigate to loans dashboard', async ({ page }) => {
     await page.goto('/loans');
     await expect(page).toHaveURL('/loans');
-    await expect(page.locator('text=/השאלות|ניהול השאלות/')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'ניהול השאלות' })).toBeVisible();
   });
 
   test('should display loan tabs (lent, borrowed, history)', async ({ page }) => {
     await page.goto('/loans');
-    await expect(page.locator('button:has-text("השאלתי")')).toBeVisible();
-    await expect(page.locator('button:has-text("שאלתי")')).toBeVisible();
-    await expect(page.locator('button:has-text("היסטוריה")')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'השאלתי' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'שאלתי', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'היסטוריה' })).toBeVisible();
   });
 
   test('should display active lent loans in first tab', async ({ page }) => {
@@ -207,7 +257,7 @@ test.describe('Loans Management', () => {
   test('should handle no loans gracefully', async ({ page }) => {
     await page.goto('/loans');
     
-    // Check all tabs for empty state messaging
+    // Check all tabs for empty state
     const tabs = ['השאלתי', 'שאלתי', 'היסטוריה'];
     
     for (const tab of tabs) {
@@ -215,7 +265,7 @@ test.describe('Loans Management', () => {
       const loanCount = await page.locator('[data-testid="loan-card"]').count();
       
       if (loanCount === 0) {
-        const hasEmptyMessage = await page.locator('text=/אין|ספרים|רשימה ריקה/').isVisible();
+        const hasEmptyMessage = await page.getByRole('alert').isVisible();
         expect(hasEmptyMessage).toBeTruthy();
       }
     }
@@ -224,8 +274,8 @@ test.describe('Loans Management', () => {
   test('should show loan statistics on family dashboard', async ({ page }) => {
     await page.goto('/family');
     
-    await expect(page.locator('text=/מושאלים|ספרים/')).toBeVisible();
-    await expect(page.locator('text=/שהשאלנו|שאלנו/')).toBeVisible();
+    await expect(page.getByText('ספרים מושאלים', { exact: true })).toBeVisible();
+    await expect(page.getByText('ספרים ששאלנו', { exact: true })).toBeVisible();
   });
 
   test('should navigate to loans from family dashboard', async ({ page }) => {
