@@ -25,6 +25,7 @@ import {
   MenuBook as BookIcon,
 } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import { useBook } from '../hooks/useBooks';
 import { useUser } from '../hooks/useUser';
@@ -38,6 +39,7 @@ import LikeButton from '../components/LikeButton';
 export default function BookDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   
   // Reactive hooks - automatic caching and refetching
@@ -64,10 +66,33 @@ export default function BookDetails() {
       await apiCall(`/api/books/${book.id}`, {
         method: 'DELETE',
       });
-      navigate('/books');
+      
+      // Get the catalogId for cache removal
+      const catalogId = book.book_catalog_id || book.catalogId;
+      const familyBookId = book.id;
+      
+      console.log('[Delete] Removing book from cache:', { catalogId, familyBookId });
+      
+      // Surgically remove the book from the normalized cache
+      // This will also update all active list queries to remove the book immediately
+      const { removeBookFromCache } = await import('../hooks/useBooks');
+      removeBookFromCache(queryClient, familyBookId);
+      
+      // Also try with catalogId if different
+      if (catalogId && catalogId !== familyBookId) {
+        removeBookFromCache(queryClient, catalogId);
+      }
+      
+      // Remove the detail query for this specific book
+      queryClient.removeQueries({ queryKey: ['books', 'detail', book.id] });
+      
+      // Invalidate loan queries (they may need to refetch)
+      queryClient.invalidateQueries({ queryKey: ['loans'] });
+      
+      // Navigate to books list
+      navigate('/books', { replace: true });
     } catch (err: any) {
       console.error('Failed to delete book:', err);
-      // Could add error toast notification here
       setDeleting(false);
       setDeleteDialogOpen(false);
     }

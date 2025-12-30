@@ -77,6 +77,73 @@ function updateNormalizedCache(
 }
 
 /**
+ * Remove a book from the normalized cache
+ * @param bookId - Can be either a catalogId or a familyBookId
+ */
+export function removeBookFromCache(queryClient: any, bookId: string) {
+  const cache = getNormalizedCache(queryClient);
+  console.log('[removeBookFromCache] Attempting to remove bookId:', bookId);
+  console.log('[removeBookFromCache] Current cache byId keys:', Object.keys(cache.byId));
+  
+  // First, try to find the catalogId if bookId is a familyBookId
+  let catalogIdToRemove = bookId;
+  
+  // Check if bookId exists directly in cache (it's a catalogId)
+  if (!cache.byId[bookId]) {
+    // bookId might be a familyBookId - search for it in ownedCopies
+    for (const [catalogId, book] of Object.entries(cache.byId)) {
+      const ownedCopies = (book as CatalogBook).viewerContext?.ownedCopies || [];
+      if (ownedCopies.some((c: any) => c.familyBookId === bookId)) {
+        console.log('[removeBookFromCache] Found by familyBookId, catalogId:', catalogId);
+        catalogIdToRemove = catalogId;
+        break;
+      }
+    }
+  }
+  
+  console.log('[removeBookFromCache] Will remove catalogId:', catalogIdToRemove);
+  
+  // Create completely new cache object to ensure React Query detects the change
+  const newByIdEntries = Object.entries(cache.byId).filter(
+    ([key]) => key !== catalogIdToRemove
+  );
+  const newById = Object.fromEntries(newByIdEntries);
+  
+  // Remove from all queriesData lists
+  const newQueriesData: Record<string, string[]> = {};
+  Object.entries(cache.queriesData).forEach(([key, ids]) => {
+    newQueriesData[key] = ids.filter(id => id !== catalogIdToRemove);
+  });
+  
+  // Set the new normalized cache
+  const newCache: NormalizedBooksCache = {
+    byId: newById,
+    queriesData: newQueriesData,
+  };
+  
+  console.log('[removeBookFromCache] New cache byId keys:', Object.keys(newCache.byId));
+  queryClient.setQueryData(queryKeys.books.normalized(), newCache);
+
+  // Also update all active list queries to remove the book immediately
+  // This ensures the UI updates instantly without waiting for refetch
+  queryClient.setQueriesData(
+    { queryKey: queryKeys.books.lists() },
+    (oldData: BooksResponse | undefined) => {
+      if (!oldData || !oldData.books) return oldData;
+      const filtered = oldData.books.filter(book => 
+        book.catalogId !== catalogIdToRemove && 
+        book.catalogId !== bookId
+      );
+      console.log('[removeBookFromCache] setQueriesData: filtered', oldData.books.length, '->', filtered.length);
+      return {
+        ...oldData,
+        books: filtered,
+      };
+    }
+  );
+}
+
+/**
  * Get books from normalized cache and filter them
  */
 function getBooksFromCache(

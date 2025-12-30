@@ -220,6 +220,13 @@ function groupBooksForResponse({ books, loanMap, likesMap, userLikesSet, viewerF
  * @route GET /api/books
  */
 export const getAllBooks = asyncHandler(async (req, res) => {
+  console.log('[getAllBooks] Request received', { 
+    query: req.query,
+    userId: req.userId,
+    familyId: req.familyId,
+    timestamp: Date.now()
+  });
+  
   const perfStart = Date.now();
   const timings = {};
   
@@ -399,6 +406,13 @@ export const getAllBooks = asyncHandler(async (req, res) => {
   if (totalTime > 500) {
     console.warn(`⚠️  getAllBooks SLOW: ${totalTime}ms`, timings);
   }
+  
+  console.log('[getAllBooks] Response:', {
+    bookCount: grouped.length,
+    bookTitles: grouped.map(b => b.title).slice(0, 5),
+    view,
+    timestamp: Date.now()
+  });
 
   res.json({
     books: grouped,

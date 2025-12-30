@@ -16,6 +16,7 @@ interface Loan {
   family_books?: any;
   books?: any;
   borrower_family?: any;
+  owner_family?: any;
 }
 
 interface LoansResponse {

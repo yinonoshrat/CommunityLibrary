@@ -229,6 +229,7 @@ export const db = {
   // Books operations
   books: {
     getAll: async (filters = {}) => {
+      console.log('[DB] books.getAll called with filters:', JSON.stringify(filters));
       let query = supabase
         .from('books_view')
         .select('*, families(name, phone, whatsapp, email)')
@@ -289,6 +290,7 @@ export const db = {
       }
 
       const { data, error } = await query
+      console.log('[DB] books.getAll returned', data?.length, 'books:', data?.map(b => ({ id: b.id, title: b.title })));
       if (error) throw error
       return data
     },
@@ -510,6 +512,7 @@ export const db = {
     },
 
     delete: async (id) => {
+      console.log(`[DB] Deleting book with id: ${id}`);
       // Only delete the family_books record
       // Keep the book_catalog entry for other families
       const { data, error } = await supabase
@@ -517,7 +520,14 @@ export const db = {
         .delete()
         .eq('id', id)
         .select()
-      if (error) throw error
+      
+      if (error) {
+        console.error(`[DB] Error deleting book ${id}:`, error);
+        throw error;
+      }
+      
+      console.log(`[DB] Deleted book result:`, data);
+
       if (!data || data.length === 0) {
         throw new Error('Book not found')
       }

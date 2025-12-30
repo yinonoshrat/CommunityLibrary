@@ -11,7 +11,6 @@ import {
   Button,
 } from '@mui/material';
 import {
-  CloudUpload as UploadIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
   Close as CloseIcon,

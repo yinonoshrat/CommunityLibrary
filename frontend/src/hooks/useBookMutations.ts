@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type UseMutationOptions } from '@tanstack/react-query';
 import { apiCall } from '../utils/apiCall';
 import { queryKeys } from './queryKeys';
+import { removeBookFromCache } from './useBooks';
 
 // Types for book operations
 export interface CreateBookData {
@@ -50,6 +51,7 @@ export function useCreateBook(
   options?: Omit<UseMutationOptions<BookResponse, Error, CreateBookData>, 'mutationFn'>
 ) {
   const queryClient = useQueryClient();
+  const { onSuccess, ...otherOptions } = options || {};
 
   return useMutation<BookResponse, Error, CreateBookData>({
     mutationFn: async (data: CreateBookData) => {
@@ -61,12 +63,16 @@ export function useCreateBook(
       console.log('[useCreateBook] Received response:', response);
       return response.book;
     },
-    onSuccess: (_data) => {
+    onSuccess: (data, variables, context) => {
       console.log('[useCreateBook] Success, invalidating queries');
       // Invalidate all book queries to reflect the new book
       queryClient.invalidateQueries({ queryKey: queryKeys.books.all });
+      if (onSuccess) {
+        // @ts-ignore - TanStack Query type mismatch
+        onSuccess(data, variables, context);
+      }
     },
-    ...options,
+    ...otherOptions,
   });
 }
 
@@ -79,6 +85,7 @@ export function useUpdateBook(
   options?: Omit<UseMutationOptions<BookResponse, Error, UpdateBookData>, 'mutationFn'>
 ) {
   const queryClient = useQueryClient();
+  const { onSuccess, ...otherOptions } = options || {};
 
   return useMutation<BookResponse, Error, UpdateBookData>({
     mutationFn: async (data: UpdateBookData) => {
@@ -88,14 +95,19 @@ export function useUpdateBook(
       });
       return response.book;
     },
-    onSuccess: () => {
+    onSuccess: (data, variables, context) => {
       // Invalidate the specific book's detail
       queryClient.invalidateQueries({ queryKey: queryKeys.books.detail(String(bookId)) });
       
       // Invalidate all book lists since the book may appear in filtered views
       queryClient.invalidateQueries({ queryKey: queryKeys.books.all });
+      
+      if (onSuccess) {
+        // @ts-ignore - TanStack Query type mismatch
+        onSuccess(data, variables, context);
+      }
     },
-    ...options,
+    ...otherOptions,
   });
 }
 
@@ -104,12 +116,12 @@ export function useUpdateBook(
  * Invalidates: all book queries
  */
 export function useDeleteBook(
-  options?: Omit<UseMutationOptions<void, Error, number>, 'mutationFn'>
+  options?: Omit<UseMutationOptions<void, Error, string>, 'mutationFn'>
 ) {
   const queryClient = useQueryClient();
 
-  return useMutation<void, Error, number>({
-    mutationFn: async (bookId: number) => {
+  return useMutation<void, Error, string>({
+    mutationFn: async (bookId: string) => {
       await apiCall(`/api/books/${bookId}`, {
         method: 'DELETE',
       });
@@ -117,6 +129,7 @@ export function useDeleteBook(
     onSuccess: (_, bookId) => {
       // Remove the specific book from cache
       queryClient.removeQueries({ queryKey: queryKeys.books.detail(String(bookId)) });
+      removeBookFromCache(queryClient, String(bookId));
       
       // Invalidate all book lists
       queryClient.invalidateQueries({ queryKey: queryKeys.books.all });
