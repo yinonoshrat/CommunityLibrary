@@ -1,242 +1,345 @@
 # CommunityLibrary - AI Agent Instructions
 
+## Quick Reference
+
+| What | Where |
+|------|-------|
+| API Code | `api/index.js` (single source of truth) |
+| Frontend | `frontend/src/` (React + TypeScript + MUI) |
+| Local Dev | `npm run dev` (frontend:5174 + backend:3001) |
+| Deploy | Push to `main` → Vercel auto-deploys |
+| Database | Supabase Postgres with RLS |
+| Auth | Supabase Auth (Email/Password + Google OAuth) |
+
+---
+
 ## Architecture Overview
 
-This project uses a **shared codebase** for local development and Vercel serverless deployment:
-
-- **frontend/**: React + Vite + TypeScript
-- **api/**: Express.js app (shared code) - contains all API routes
-- **backend/**: Local development server that imports and runs `api/index.js`
-- **Root**: Workspace scripts using `concurrently` for local development
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CommunityLibrary                          │
+├─────────────────────────────────────────────────────────────┤
+│  frontend/          React + Vite + TypeScript + MUI         │
+│  api/               Express.js (Vercel serverless)          │
+│  backend/           Local dev wrapper (imports api/)        │
+│  backend_shared_src/ Shared controllers, services, DB       │
+│  database/          SQL migrations                          │
+│  supabase/          Edge Functions                          │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ### Critical: Shared Code Pattern
 
-**api/index.js** is the single source of truth for API logic:
+**`api/index.js`** is the single source of truth for API logic:
 - Local dev: `backend/server.js` imports and runs it with `app.listen()`
-- Vercel: Uses `api/index.js` directly as serverless function (no `app.listen()`)
-- `api/package.json` declares dependencies (express, cors) for Vercel
+- Vercel: Uses `api/index.js` directly as serverless function
+- **Never duplicate route logic** between `api/` and `backend/`
 
-**Why?** This allows identical API code to run both locally and on Vercel without duplication.
+---
 
-## Development Workflow
+## Development Commands
 
-### Local Development
 ```bash
-npm start                # Alias for npm run dev
-npm run dev              # Runs frontend (5174) + backend (3001) concurrently
-npm run dev:frontend     # Frontend only - proxies /api to localhost:3001
-npm run dev:backend      # Backend only (runs api/index.js locally)
+npm run dev              # Runs frontend (5174) + backend (3001)
+npm run dev:frontend     # Frontend only
+npm run dev:backend      # Backend only
+
+# Testing
+cd frontend && npm run test:e2e        # Playwright E2E tests
+cd api && npm test                      # API unit tests
+
+# Environment
+npx vercel env pull .env.development.local  # Pull env vars from Vercel
 ```
 
-### Environment Variables
-- **Local development**: Use `.env.development.local` file (pulled from Vercel)
-- **Production**: Environment variables managed in Vercel dashboard
-- Pull latest env vars: `npx vercel env pull .env.development.local`
+---
 
-### API Testing in Development
-- Frontend proxies `/api/*` to `http://localhost:3001` via `vite.config.js`
-- Backend runs `api/index.js` with `app.listen()` on port 3001
-- Same API code is deployed to Vercel (without `app.listen()`)
+## Project Patterns
 
-### Deployment
-- Push to `main` branch → auto-deploys via Vercel Git integration
-- Manual: `npx vercel --yes` (preview) or `npx vercel --prod`
-- Build: `vercel.json` runs `cd frontend && npm install && npm run build`
-
-## Project-Specific Patterns
-
-### API Routes Pattern
-All API routes in `api/index.js` use Express with `/api` prefix:
+### API Routes
+All routes in `api/index.js` use `/api` prefix:
 ```javascript
-app.get('/api/health', ...)   // Accessed as /api/health
-app.get('/api/books', ...)    // Accessed as /api/books
+app.get('/api/health', ...)
+app.get('/api/books', ...)
+app.post('/api/loans', ...)
 ```
 
 ### Frontend API Calls
-Direct fetch to `/api/*` - Vite proxy handles routing in dev, Vercel rewrites in production:
 ```typescript
-fetch('/api/health')  // Works in both dev and production
+fetch('/api/books')  // Works in dev (proxy) and production (Vercel rewrites)
 ```
 
-### Frontend Stack
-- React with TypeScript
-- `main.ts` renders `<App />` component
-- `App.tsx` contains main application logic
-- Build: `tsc && vite build` (in `frontend/package.json`)
+### TanStack Query Pattern
+```typescript
+// Hooks in frontend/src/hooks/
+const { data, isLoading } = useBooks(filters)
+const createLoan = useCreateLoan({ onSuccess: ... })
+```
+
+### Database Access
+```javascript
+// Use adapter pattern - backend_shared_src/db/adapter.js
+import { supabase, pool } from '../db/adapter.js'
+const { data } = await supabase.from('books').select('*')
+```
+
+---
+
+## Hebrew UI Guidelines
+
+- **All user-facing text in Hebrew**
+- **RTL layout** (right-to-left)
+- Icons on the RIGHT side of text
+- Primary action buttons on RIGHT, cancel on LEFT
+- Use Material-UI with `direction: 'rtl'`
+
+### Common Hebrew Terms
+| English | Hebrew |
+|---------|--------|
+| My Books | הספרים שלי |
+| Add Book | הוסף ספר |
+| Delete | מחק |
+| Save | שמור |
+| Cancel | ביטול |
+| Loan/Lend | השאל |
+| Return | החזר |
+| Search | חיפוש |
+| Family | משפחה |
+| Profile | פרופיל |
+
+---
 
 ## Common Tasks
 
-### Adding New API Endpoints
-1. Edit `api/index.js` - add Express routes with `/api/` prefix
-2. If adding new dependencies, update `api/package.json`
-3. Test locally with `npm run dev` (runs both frontend and backend)
+### Adding a New API Endpoint
+1. Add route in `api/index.js`
+2. If complex, create controller in `backend_shared_src/controllers/`
+3. Add tests in `api/__tests__/`
+4. Test with `npm run dev`
 
-### Adding Frontend Features
-1. Edit `frontend/src/App.tsx` or create new React components
-2. Import components in `App.tsx` or create new routes
-3. Run `npm run dev:frontend` to test
+### Adding a New Page
+1. Create in `frontend/src/pages/NewPage.tsx`
+2. Add route in `frontend/src/App.tsx`
+3. Follow layout pattern:
+```tsx
+<Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+  <Typography variant="h4">כותרת</Typography>
+  {/* Content */}
+</Container>
+```
 
-### Local Backend Development
-The backend folder is now a thin wrapper:
-- `backend/server.js` imports `api/index.js` and adds `app.listen()`
-- All API logic stays in `api/index.js`
-- Never duplicate route logic between `api/` and `backend/`
+### Adding Database Migration
+1. Create file in `database/migrations/NNN_description.sql`
+2. Run in Supabase SQL Editor
+3. Update `database/schema.sql` for reference
 
-## Best Practices
+---
 
-- **Single source of truth**: All API routes in `api/index.js`
-- **No duplication**: Backend imports api code, never copies it
-- **Dependencies**: Update `api/package.json` when adding npm packages for API
-- **Testing**: Use `npm run dev` to test full stack locally before deploying
+## Testing Requirements
+
+### API Tests (Required for each endpoint)
+1. Happy path (200/201 response)
+2. Missing required fields → 400 JSON error
+3. Invalid data types → 400 JSON error  
+4. Not found → 404 JSON error
+5. Always verify `Content-Type: application/json`
+
+### E2E Tests (Playwright)
+- Location: `frontend/e2e/`
+- Run: `cd frontend && npm run test:e2e`
+- Always wait for elements with proper selectors
+- Use `exact: true` for Hebrew text matching to avoid ambiguity
+- Example: `getByRole('tab', { name: 'שאלתי', exact: true })`
+
+---
+
+## Code Quality Checklist
+
+Before completing any task:
+- [ ] No unused imports
+- [ ] No TypeScript errors
+- [ ] Tests pass (`npm test`)
+- [ ] Build succeeds (`npm run build`)
+- [ ] Hebrew text is correct
+- [ ] RTL layout works
+
+---
+
+## Key Features Implementation
+
+### Book Detection (AI Vision)
+- Upload image → OCR + Gemini AI → Detect book titles
+- Progress tracking through 6 stages (0-100%)
+- Retry mechanism with error codes
+- Files: `backend_shared_src/services/hybridVision.js`
+
+### Loan System
+- Frontend-generated UUIDs for optimistic updates
+- Cache updates without full refetch
+- Automatic book status updates
+- Files: `frontend/src/hooks/useLoanMutations.ts`
+
+### Authentication
+- Supabase Auth (Email/Password + Google OAuth)
+- Multiple users can share email (family members)
+- `auth_email` field stores unique Auth identity
+- Files: `frontend/src/contexts/AuthContext.tsx`
+
+### Theme System
+- 5 themes: Blue, Dark, Green, Purple, Orange
+- Persisted in localStorage key: `communityLibrary_theme`
+- Files: `frontend/src/themes.ts`, `frontend/src/contexts/ThemeContext.tsx`
+
+---
+
+## Environment Variables
+
+### Backend (Required)
+```
+POSTGRES_URL=...              # Supabase pooler connection
+POSTGRES_URL_NON_POOLING=...  # Direct connection (migrations)
+SUPABASE_URL=...              # Supabase API URL
+SUPABASE_ANON_KEY=...         # Public key
+SUPABASE_SERVICE_ROLE_KEY=... # Admin key (server only)
+GEMINI_API_KEY=...            # For AI book detection
+```
+
+### Frontend (VITE_ prefix required)
+```
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+```
+
+---
+
+## When Uncertain
+
+1. **Stop and ask** - Don't guess business logic
+2. **Check existing patterns** - Look at similar code in the codebase
+3. **Test incrementally** - Verify each step works
+4. **Read error messages** - They usually explain the issue
+
+---
 
 ## AI Agent Workflow Guidelines
 
 ### Code Quality
 - **Clean imports**: Remove unused imports before completing tasks
-- **TypeScript strict mode**: Ensure no TS errors (unused variables, missing types, etc.)
-- **Run build verification**: After making changes, verify with `npm run build` in the affected directory
-- **ESLint compliance**: Fix linting errors that would block production builds
+- **TypeScript strict mode**: Ensure no TS errors (unused variables, missing types)
+- **Run build verification**: After changes, verify with `npm run build`
+- **ESLint compliance**: Fix linting errors that would block builds
 
 ### Testing Requirements
-- **For each feature**: Create tests or update existing tests before marking feature complete
+- **For each feature**: Create/update tests before marking complete
 - **After changes**: Always run tests to verify everything works
-- **Test locations**: Frontend tests in `frontend/src/__tests__/`, API tests in `api/__tests__/`
-- **Critical: Test error handling**: Every API endpoint MUST have tests that verify:
-  1. Valid JSON response is returned even on errors
-  2. Missing/invalid required fields return 400 with JSON error
-  3. Server errors return proper JSON error (not empty response or HTML)
+- **Critical - Test error handling**: Every API endpoint MUST have tests that verify:
+  1. Valid JSON response returned even on errors
+  2. Missing/invalid fields return 400 with JSON error
+  3. Server errors return proper JSON (not empty or HTML)
   4. Error messages are clear and actionable
-- **Test pattern**: For each API endpoint, create tests for:
-  - Happy path (valid input returns expected output)
+- **Test pattern for API endpoints**:
+  - Happy path (valid input → expected output)
   - Missing required fields
   - Invalid data types
   - Edge cases (null, undefined, empty strings)
   - Duplicate data (if applicable)
-  - Always verify `Content-Type: application/json` header in responses
+  - Always verify `Content-Type: application/json`
 
 ### Task Management
-- **Break down large tasks**: Split big features into smaller, manageable sub-tasks
-- **Implement incrementally**: Complete one sub-task at a time before moving to the next
+- **Break down large tasks**: Split into smaller sub-tasks
+- **Implement incrementally**: Complete one sub-task before the next
 - **Use todo lists**: Track progress using the task management system
 
-### When Uncertain
-- **Stop and ask**: If requirements are unclear or multiple approaches are possible, stop and ask for input
-- **Don't guess**: Avoid making assumptions about user preferences or business logic
-- **Clarify first**: Better to ask for clarification than implement the wrong solution
-
-## Database Integration
-
-### Current Setup: Supabase (Postgres)
-- **Database**: Supabase Postgres (connection details in `.env.development.local`)
-- **Authentication**: Supabase Auth with multiple providers
-- **Environment variables** available:
-  - `POSTGRES_URL` - Connection string with pooler (recommended for serverless)
-  - `POSTGRES_URL_NON_POOLING` - Direct connection (for migrations/admin tasks)
-  - `SUPABASE_URL` - Supabase API endpoint
-  - `SUPABASE_ANON_KEY` - Public API key for client-side
-  - `SUPABASE_SERVICE_ROLE_KEY` - Admin key for server-side operations
-
-### Authentication Strategy
-- **Primary Auth**: Supabase Auth handles user authentication
-- **Multiple Providers Supported**:
-  - **Email/Password**: Traditional email login (multiple users can share same email)
-  - **Google OAuth**: Sign in with Google account
-  - **Facebook OAuth**: Sign in with Facebook account
-- **User Management**: 
-  - Each user has unique `auth_id` from Supabase Auth (regardless of provider)
-  - Users table links to `auth.users` via `auth_id` (foreign key)
-  - Email field can be non-unique to support multiple users per email
-  - Family association allows multiple family members with same email
-- **Implementation Requirements**:
-  - Configure OAuth providers in Supabase Dashboard → Authentication → Providers
-  - Add authorized redirect URLs for each environment (local, dev, production)
-  - Frontend uses `@supabase/supabase-js` client for OAuth flows
-  - Backend verifies JWT tokens from Supabase Auth
-
-### Database Abstraction Pattern
-To allow easy database switching in the future:
-
-1. **Create a database adapter layer** (`api/db/adapter.js`):
-   ```javascript
-   // Example structure - abstracts DB operations
-   export const db = {
-     query: async (sql, params) => { /* implementation */ },
-     books: {
-       getAll: async () => { /* implementation */ },
-       getById: async (id) => { /* implementation */ },
-       create: async (data) => { /* implementation */ }
-     }
-   }
-   ```
-
-2. **Use environment variables for configuration**:
-   - Access via `process.env.POSTGRES_URL` or `process.env.SUPABASE_URL`
-   - Never hardcode connection strings in code
-   
-3. **Import the adapter in routes**:
-   ```javascript
-   import { db } from './db/adapter.js'
-   app.get('/api/books', async (req, res) => {
-     const books = await db.books.getAll()
-     res.json({ books })
-   })
-   ```
-
-4. **To switch databases**: Update adapter implementation, not route logic
-   - Swap Supabase client for PostgreSQL client, MySQL, MongoDB, etc.
-   - Routes remain unchanged
-
-### Getting Started with Database
-1. Pull environment variables: `npx vercel env pull .env.development.local`
-2. Install database client: `cd api && npm install @supabase/supabase-js` (or `pg` for raw Postgres)
-3. Create adapter in `api/db/adapter.js`
-4. Use adapter in API routes
-
-## UI/UX Implementation Guidelines
-
-### Progress Indication
-When implementing features with multi-step processes (like bulk upload with AI), always provide clear progress feedback:
-
-**Example: Bulk Book Upload with AI**
-```typescript
-// State management
-const [progress, setProgress] = useState(0);
-const [currentStep, setCurrentStep] = useState('');
-
-// Multi-step process
-async function processBooks() {
-  setCurrentStep('Detecting books from image...');
-  setProgress(25);
-  const detected = await aiVisionService.detect(image);
-  
-  setCurrentStep('Searching online databases...');
-  setProgress(50);
-  const enriched = await Promise.all(detected.map(searchOnline));
-  
-  setCurrentStep('Adding books to catalog...');
-  setProgress(75);
-  await bulkAdd(enriched);
-  
-  setProgress(100);
-  setCurrentStep('Complete!');
-}
-```
-
-**UI Components for Progress:**
+### Progress Indication for Multi-Step Features
+When implementing features with multi-step processes (bulk upload, AI detection):
 - Use `LinearProgress` or `CircularProgress` from Material-UI
 - Show percentage completion when deterministic
 - Display current step description
-- Provide visual feedback for each phase:
-  - Image processing
-  - AI detection
-  - Online search/enrichment
-  - Database insertion
 - Handle errors gracefully with clear messages
+- Disable submit buttons during processing
 - Allow cancellation for long-running operations
 
-**Best Practices:**
-- Update progress at meaningful milestones, not too frequently
-- Show spinner for indeterminate operations
-- Disable submit buttons during processing
-- Clear error state when retrying
-- Celebrate success with clear completion message
+---
+
+## File Structure Quick Reference
+
+```
+frontend/src/
+├── pages/           # Route components (AddBook, MyBooks, etc.)
+├── components/      # Reusable UI (BookCard, Navbar, etc.)
+├── hooks/           # TanStack Query hooks (useBooks, useLoans)
+├── contexts/        # React contexts (AuthContext, ThemeContext)
+├── lib/             # API client, Supabase client
+├── utils/           # Helper functions
+├── types.ts         # TypeScript interfaces
+└── themes.ts        # MUI theme definitions
+
+api/
+├── index.js         # Main Express app (serverless entry)
+├── cron/            # Vercel cron jobs
+├── services/        # API-specific services
+└── __tests__/       # API unit tests (Vitest)
+
+backend_shared_src/
+├── controllers/     # Request handlers (books, loans, auth)
+├── services/        # Business logic (hybridVision, storage)
+├── db/              # Database adapter (Supabase + pg pool)
+├── middleware/      # Auth middleware
+├── routes/          # Route definitions
+└── constants/       # Error codes, config
+
+database/
+├── schema.sql       # Full schema reference
+└── migrations/      # Numbered migration files
+
+frontend/e2e/        # Playwright E2E tests
+```
+
+---
+
+## Database Schema (Key Tables)
+
+```sql
+-- Core tables
+families (id, name, phone, email, whatsapp)
+users (id, family_id, full_name, email, auth_email, is_family_admin)
+book_catalog (id, title, author, isbn, genre, cover_image_url)
+family_books (id, family_id, catalog_id, status, condition)
+loans (id, family_book_id, borrower_family_id, owner_family_id, status)
+reviews (id, book_catalog_id, user_id, review_text, rating)
+likes (id, book_catalog_id, user_id)
+
+-- Detection system
+detection_jobs (id, user_id, status, progress, stage, result, error_code)
+```
+
+---
+
+## API Endpoints Summary
+
+### Authentication
+- `POST /api/auth/register` - Register new user + family
+- `POST /api/auth/login` - Email/password login
+- `POST /api/auth/logout` - Clear session
+
+### Books
+- `GET /api/books` - List books (filters: familyId, status, search)
+- `GET /api/books/:id` - Get book details
+- `POST /api/books` - Create book
+- `PUT /api/books/:id` - Update book
+- `DELETE /api/books/:id` - Delete book
+
+### Loans
+- `GET /api/loans` - List loans
+- `POST /api/loans` - Create loan
+- `PUT /api/loans/:id` - Update loan (return)
+
+### Detection
+- `POST /api/books/detect-from-image` - Start AI detection
+- `GET /api/detection-jobs/:id` - Get job status
+- `POST /api/detection-jobs/:id/retry` - Retry failed job
+
+### Families
+- `GET /api/families` - List all families
+- `GET /api/families/:id` - Get family details
+- `GET /api/families/:id/members` - Get family members
