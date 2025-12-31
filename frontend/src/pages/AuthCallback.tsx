@@ -55,7 +55,7 @@ export default function AuthCallback() {
       } catch (err: any) {
         console.error('OAuth callback error:', err)
         setError(err.message || 'שגיאה בהתחברות')
-      } 
+      }
     } 
 
     handleCallback()
@@ -81,3 +81,4 @@ export default function AuthCallback() {
     </Container>
   )
 }
+// comment to trigge build
