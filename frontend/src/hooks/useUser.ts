@@ -54,6 +54,14 @@ export function useUser(
     queryFn: () => apiCall<UserResponse>(`/api/users/${userId}`),
     enabled: !!userId, // Only run if userId exists
     staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: (failureCount, error) => {
+      // Don't retry on 404 - user doesn't exist in database
+      if ((error as Error & { status?: number }).status === 404) {
+        return false;
+      }
+      // Default retry once for other errors
+      return failureCount < 1;
+    },
     ...options,
   });
 }

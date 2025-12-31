@@ -49,7 +49,7 @@ const queryClient = new QueryClient({
 function RequireProfile({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
   const location = useLocation()
-  const { data: userData, isLoading } = useUser(user?.id)
+  const { data: userData, isLoading, isError } = useUser(user?.id)
   
   // Skip check for certain paths
   const skipCheckPaths = ['/complete-profile', '/auth/callback', '/login', '/register', '/reset-password']
@@ -64,6 +64,12 @@ function RequireProfile({ children }: { children: React.ReactNode }) {
         <CircularProgress />
       </Box>
     )
+  }
+  
+  // If user exists in auth but not in database (404 error), redirect to complete profile
+  // This happens when a new user logs in with Google OAuth
+  if (user && isError) {
+    return <Navigate to="/complete-profile" replace />
   }
   
   // If user exists in auth but has no family_id, redirect to complete profile
