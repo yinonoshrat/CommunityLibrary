@@ -32,24 +32,24 @@ export default function AuthCallback() {
             // Try to get user profile from our database
             const response = await apiCall('/api/auth/me')
             
-            if (response.user) {
-              // User exists, navigate to home
-              console.log('User found in database, navigating to home')
+            if (response.user && response.user.family_id) {
+              // User exists with a family, navigate to home
+              console.log('User found in database with family, navigating to home')
               navigate('/')
+            } else if (response.user && !response.user.family_id) {
+              // User exists but has no family - needs to complete profile
+              console.log('User found but has no family, redirecting to complete profile')
+              navigate('/complete-profile')
             } else {
               // User doesn't exist in database, need to complete registration
               console.log('User not found in database, redirecting to complete profile')
               navigate('/complete-profile')
             }
           } catch (err: any) {
-            // 401 or 404 means user doesn't exist in our database yet
-            if (err.message.includes('401') || err.message.includes('404') || err.message.includes('User not found')) {
-              console.log('User not found in database, redirecting to complete profile')
-              navigate('/complete-profile')
-            } else {
-              // Other error, show it
-              throw err
-            }
+            // Any error means user likely doesn't exist in our database yet
+            // This includes 401 (translated to Hebrew message), 404, or "User not found"
+            console.log('Error checking user profile, redirecting to complete profile:', err.message)
+            navigate('/complete-profile')
           }
         }
       } catch (err: any) {

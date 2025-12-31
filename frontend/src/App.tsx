@@ -1,5 +1,5 @@
-import { ThemeProvider, CssBaseline, Box } from '@mui/material'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { ThemeProvider, CssBaseline, Box, CircularProgress } from '@mui/material'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { prefixer } from 'stylis'
@@ -8,6 +8,7 @@ import { CacheProvider } from '@emotion/react'
 import createCache from '@emotion/cache'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ThemeContextProvider, useThemeContext } from './contexts/ThemeContext'
+import { useUser } from './hooks/useUser'
 import Navbar from './components/Navbar'
 import Home from './pages/Home'
 import Login from './pages/Login'
@@ -44,6 +45,35 @@ const queryClient = new QueryClient({
   },
 })
 
+// Wrapper component that ensures user has completed profile (has a family)
+function RequireProfile({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  const location = useLocation()
+  const { data: userData, isLoading } = useUser(user?.id)
+  
+  // Skip check for certain paths
+  const skipCheckPaths = ['/complete-profile', '/auth/callback', '/login', '/register', '/reset-password']
+  if (skipCheckPaths.includes(location.pathname)) {
+    return <>{children}</>
+  }
+  
+  // While loading user data, show spinner
+  if (user && isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+        <CircularProgress />
+      </Box>
+    )
+  }
+  
+  // If user exists in auth but has no family_id, redirect to complete profile
+  if (user && userData?.user && !userData.user.family_id) {
+    return <Navigate to="/complete-profile" replace />
+  }
+  
+  return <>{children}</>
+}
+
 function AppContent() {
   const { user, loading } = useAuth()
   const { muiTheme } = useThemeContext()
@@ -58,24 +88,26 @@ function AppContent() {
       <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', m: 0, p: 0 }}>
         <Navbar user={user} />
         <Box component="main" sx={{ flexGrow: 1, p: 0, m: 0 }}>
-          <Routes>
-            <Route path="/" element={user ? <Home /> : <Navigate to="/login" />} />
-            <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
-            <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route path="/complete-profile" element={<CompleteProfile />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/books" element={user ? <MyBooks /> : <Navigate to="/login" />} />
-            <Route path="/books/add" element={user ? <AddBook /> : <Navigate to="/login" />} />
-            <Route path="/books/:id" element={user ? <BookDetails /> : <Navigate to="/login" />} />
-            <Route path="/books/:id/edit" element={user ? <EditBook /> : <Navigate to="/login" />} />
-            <Route path="/search" element={user ? <SearchBooks /> : <Navigate to="/login" />} />
-            <Route path="/loans" element={user ? <LoansDashboard /> : <Navigate to="/login" />} />
-            <Route path="/recommendations" element={user ? <Recommendations /> : <Navigate to="/login" />} />
-            <Route path="/family" element={user ? <FamilyDashboard /> : <Navigate to="/login" />} />
-            <Route path="/family/members" element={user ? <FamilyMembers /> : <Navigate to="/login" />} />
-            <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
-          </Routes>
+          <RequireProfile>
+            <Routes>
+              <Route path="/" element={user ? <Home /> : <Navigate to="/login" />} />
+              <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+              <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/complete-profile" element={<CompleteProfile />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/books" element={user ? <MyBooks /> : <Navigate to="/login" />} />
+              <Route path="/books/add" element={user ? <AddBook /> : <Navigate to="/login" />} />
+              <Route path="/books/:id" element={user ? <BookDetails /> : <Navigate to="/login" />} />
+              <Route path="/books/:id/edit" element={user ? <EditBook /> : <Navigate to="/login" />} />
+              <Route path="/search" element={user ? <SearchBooks /> : <Navigate to="/login" />} />
+              <Route path="/loans" element={user ? <LoansDashboard /> : <Navigate to="/login" />} />
+              <Route path="/recommendations" element={user ? <Recommendations /> : <Navigate to="/login" />} />
+              <Route path="/family" element={user ? <FamilyDashboard /> : <Navigate to="/login" />} />
+              <Route path="/family/members" element={user ? <FamilyMembers /> : <Navigate to="/login" />} />
+              <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
+            </Routes>
+          </RequireProfile>
         </Box>
       </Box>
     </ThemeProvider>

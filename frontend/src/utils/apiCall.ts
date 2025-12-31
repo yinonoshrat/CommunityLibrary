@@ -30,12 +30,10 @@ export async function apiCall<T = any>(
         errorMessage = response.statusText || errorMessage;
       }
       
-      // Provide helpful message for authentication errors
-      if (response.status === 401) {
-        throw new Error('נדרשת התחברות - אנא התחבר כדי להשתמש בתכונה זו');
-      }
-      
-      throw new Error(errorMessage);
+      // Create an error with status code attached for error handling
+      const error = new Error(errorMessage) as Error & { status?: number };
+      error.status = response.status;
+      throw error;
     }
 
     return response.json();
