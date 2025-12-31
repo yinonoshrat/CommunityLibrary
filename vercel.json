@@ -15,16 +15,6 @@
       "maxDuration": 30
     }
   },
-  "crons": [
-    {
-      "path": "/api/cron/cleanup-detection-jobs",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/check-job-timeouts",
-      "schedule": "*/5 * * * *"
-    }
-  ],
   "rewrites": [
     {
       "source": "/api/:path*",
