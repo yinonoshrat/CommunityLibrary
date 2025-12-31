@@ -56,7 +56,7 @@ export default function AuthCallback() {
         console.error('OAuth callback error:', err)
         setError(err.message || 'שגיאה בהתחברות')
       }
-    }
+    } 
 
     handleCallback()
   }, [navigate])
