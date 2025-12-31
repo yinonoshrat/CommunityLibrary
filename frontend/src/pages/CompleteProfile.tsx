@@ -16,12 +16,15 @@ import {
   FormLabel,
   Autocomplete,
 } from '@mui/material'
+import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { apiCall } from '../utils/apiCall'
 import { useFamilies, type Family } from '../hooks/useFamilies'
+import { queryKeys } from '../hooks/queryKeys'
 
 export default function CompleteProfile() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   
@@ -123,6 +126,9 @@ export default function CompleteProfile() {
         body: JSON.stringify(payload),
       })
 
+      // Invalidate user cache so RequireProfile gets fresh data
+      await queryClient.invalidateQueries({ queryKey: queryKeys.users.detail(userId) })
+      
       // Profile completed, navigate to home
       navigate('/')
     } catch (err: any) {
